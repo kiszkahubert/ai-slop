@@ -24,6 +24,11 @@ export function simStep(dt, ctl) {
   updatePlayer(dt, ctl);
   if (game.mode !== 'play') return false;
   const P = game.P;
+  if (game.free) {                      // free viewing: no physiology, always fit and well
+    Object.assign(game.S, { health: 100, stamina: 100, exh: 0, frost: 0, spo2: 95, winded: false });
+    checkProgress();
+    return true;
+  }
   const cause = stepPhysiology(game, (dt * TIME_SCALE) / 3600, { moving: P.moving, sprint: P.sprint, grade: P.grade, resting: false });
   if (cause) { die(cause); return false; }
   checkProgress();

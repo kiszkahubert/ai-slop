@@ -16,11 +16,13 @@ export const game = {
   view: { yaw: 0, pitch: -0.15, dist: 7, fp: false },
   env: { T: 0, wind: 0, wc: 0, vis: 60, sunEl: 0, cwm: false, exposure: 1 },
   auto: null,             // route-following autopilot state
+  free: false,            // free viewing: teleport anywhere, survival systems off, nothing saved
   field: null, backdrop: null, routes: null, camps: null, world: null, weather: null,
 };
 
-export function newGame(seed) {
+export function newGame(seed, { free = false } = {}) {
   const g = game;
+  g.free = free;
   g.S = {
     seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
     o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
@@ -61,6 +63,7 @@ export function die(cause) {
 export function checkProgress() {
   const { S, P, routes } = game;
   if (P.y > S.maxAlt) S.maxAlt = P.y;
+  if (game.free) return;            // free viewing: no landmarks, summits or win
   for (const route of [routes.main, routes.lhotse]) for (const [tag, i] of Object.entries(route.tags)) {
     if (S.landmarks[tag] || !LANDMARKS[tag]) continue;
     const p = route.pts[i];
@@ -105,6 +108,7 @@ export function score() {
 
 // ---------------- camps
 export function restHours(hours) {
+  if (game.free) { game.time += hours; refreshConditions(); return true; }
   const steps = Math.max(1, Math.ceil(hours * 10)), dtH = hours / steps;
   for (let k = 0; k < steps; k++) {
     game.time += dtH;
@@ -156,6 +160,7 @@ function serialize() {
   return JSON.stringify({ v: 2, S: game.S, P: { x: P.x, z: P.z, facing: P.facing, clipped: P.clipped }, time: game.time, yaw: game.view.yaw });
 }
 export function save(silent) {
+  if (game.free) return;            // free viewing never overwrites the expedition save
   lastSave = serialize();
   try { localStorage.setItem(SAVE_KEY, lastSave); } catch { /* private mode: keep the in-memory copy */ }
   if (!silent) toast('Progress saved.', 'good');
@@ -173,8 +178,66 @@ export function load() {
   game.S = d.S; game.S.stock.ebc = 99;
   Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1 });
   game.P.y = game.field.height(game.P.x, game.P.z);
-  game.time = d.time; game.view.yaw = d.yaw; game.auto = null;
+  game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
   game.weather = new Weather(game.S.seed);
   refreshConditions();
   return true;
+}
+
+// ---------------- free viewing
+/** Places you can teleport to in free viewing, in route order. */
+export function destinations() {
+  const m = game.routes.main, l = game.routes.lhotse;
+  const list = [
+    ['ebc', 'Everest Base Camp', m, m.s('ebc') + 20, 1],
+    ['icefall_mid', 'Khumbu Icefall', m, m.s('icefall_mid'), 1],
+    ['c1', 'Camp 1', m, m.s('c1'), 1],
+    ['c2', 'Camp 2 · ABC', m, m.s('c2'), 1],
+    ['c3', 'Camp 3 · Lhotse Face', m, m.s('c3'), 1],
+    ['yellowband', 'Yellow Band', m, m.s('yellowband'), 1],
+    ['c4', 'Camp 4 · South Col', m, m.s('c4'), 1],
+    ['balcony', 'The Balcony', m, m.s('balcony'), 1],
+    ['southsummit', 'South Summit', m, m.s('southsummit'), 1],
+    ['hillary', 'Hillary Step', m, m.s('hillary'), 1],
+    ['everest', 'Summit of Mount Everest', m, m.L - 7, 1],      // just below the top, facing the summit
+    ['lhotse_c4', 'Lhotse Camp 4', l, l.s('lhotse_c4'), 1],
+    ['couloir', 'Lhotse Couloir', l, l.s('couloir'), 1],
+    ['lhotse', 'Summit of Lhotse', l, l.L - 7, 1],
+  ];
+  return list.map(([id, name, route, s, dir]) => {
+    const summit = id === 'everest' || id === 'lhotse', p = route.at(summit ? route.L : s);   // summits show the top's height
+    return { id, name, route, s, dir, elevation: game.field.height(p.x, p.z), summit };
+  });
+}
+
+export function enterFreeViewing() {
+  if (game.free) return;
+  game.free = true; game.auto = null;
+  toast('Free viewing: teleport anywhere with T, survival systems are off. Your saved expedition is kept.', 'info', 7);
+}
+
+export function teleportTo(id) {
+  const d = destinations().find((x) => x.id === id);
+  if (!d) return false;
+  const { P, view } = game, p = d.route.at(d.s), q = d.route.at(d.s + d.dir * 25);
+  Object.assign(P, { x: p.x, z: p.z, falling: null, clipped: -1, onLadder: false, routeHint: -1, moving: false });
+  P.y = game.field.height(P.x, P.z);
+  view.yaw = Math.atan2(-(q.x - p.x), -(q.z - p.z)); P.facing = view.yaw; view.pitch = d.summit ? 0.08 : 0.02;
+  game.auto = null;
+  refreshConditions();
+  emit('teleported', d);
+  toast(`${d.name} — ${fmt(d.elevation)} m`, 'good', 3);
+  return true;
+}
+
+/** Jump to an hour of the current day (or the next day if it is already later). */
+export function setHour(h) {
+  const day = Math.floor(game.time / 24) * 24;
+  game.time = day + h + (day + h < game.time - 12 ? 24 : 0);
+  refreshConditions();
+}
+
+export function setClearWeather(on) {
+  game.weather.clear = on;
+  refreshConditions();
 }

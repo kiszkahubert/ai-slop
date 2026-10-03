@@ -35,6 +35,7 @@ export class Weather {
     }
   }
   sample(tH) {
+    if (this.clear) return { J: 0.12, S: 0, dir: 275 };     // free viewing: clear, calm skies
     const t = ((tH % HOURS) + HOURS) % HOURS, i = Math.floor(t), f = t - i, k = (i + 1) % HOURS;
     return { J: lerp(this.J[i], this.J[k], f), S: lerp(this.S[i], this.S[k], f), dir: lerp(this.D[i], this.D[k], f) };
   }

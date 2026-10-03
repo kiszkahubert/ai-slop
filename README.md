@@ -20,6 +20,16 @@ The Lhotse branch turns right at the Yellow Band, goes to Lhotse Camp 4 and clim
 
 To win, stand on Everest (8,849 m) or Lhotse (8,516 m) and get back down to Camp 2 alive. Doing both earns a bonus.
 
+## Free viewing
+
+To look around, choose **Free viewing** on the title screen, or open the **Base Camp** menu (E) during an expedition.
+You can teleport to any camp (Base Camp, Camps 1–4, Lhotse Camp 4), the Icefall, the Yellow Band, the Balcony, the
+South Summit, the Hillary Step, or the summits of Everest and Lhotse. Press **T** at any time to reopen the panel. It
+also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
+
+Survival systems are off in free viewing: no hypoxia, cold, falls or crevasses. Nothing is saved, so the expedition
+you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.
+
 ## Run
 
 ES modules and the terrain files must be served over HTTP. Opening `index.html` from disk will not work.
@@ -43,6 +53,7 @@ Then open <http://localhost:8080>. An internet connection is needed for Three.js
 | O | Oxygen on/off · 1–4 or `[` `]` flow in L/min |
 | V | Third / first person · mouse wheel sets camera distance |
 | M | Enlarge the route map |
+| T | Free viewing only: teleport to a camp or summit, set the time of day and weather |
 | Esc | Pause |
 
 ## Project layout

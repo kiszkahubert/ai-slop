@@ -57,7 +57,7 @@ export function updateHUD(dt) {
   el.accl.textContent = `Acclimatized to ~${fmt(Math.round(S.accl / 10) * 10)} m · highest ${fmt(S.maxAlt)} m`;
   el.clock.textContent = `Day ${dayOf(game.time)} · ${timeOfDay(game.time)}${game.auto ? ' · ⏩ ×4' : ''}`;
   const hod = hourOfDay(game.time);
-  if (y > 7900 && !(S.summits.everest && S.summits.lhotse)) {
+  if (y > 7900 && !game.free && !(S.summits.everest && S.summits.lhotse)) {
     const past = hod >= TURNAROUND_H && hod < 23;
     el.turn.textContent = past ? `Past the ${TURNAROUND_H}:00 turnaround — descend!` : `Turnaround time ${TURNAROUND_H}:00`;
     el.turn.style.color = past ? 'var(--bad)' : 'var(--warn)';
@@ -85,9 +85,13 @@ export function updateHUD(dt) {
   // death zone
   const inDZ = y > DEATH_ZONE;
   el.dzTag.classList.toggle('hidden', !inDZ);
-  if (inDZ) { el.dzTag.textContent = flowing ? 'DEATH ZONE · on oxygen' : 'DEATH ZONE · NO OXYGEN — health draining'; el.dzTag.classList.toggle('flash', !flowing); }
+  if (inDZ) {
+    el.dzTag.textContent = game.free ? 'DEATH ZONE · above 8,000 m' : flowing ? 'DEATH ZONE · on oxygen' : 'DEATH ZONE · NO OXYGEN — health draining';
+    el.dzTag.classList.toggle('flash', !flowing && !game.free);
+  }
   // status
   const pills = [], ropes = game.world.ropes;
+  if (game.free) pills.push('<span class="pill on">Free viewing · [T] teleport</span>');
   if (P.clipped >= 0) pills.push(`<span class="pill on">Clipped: ${ropes[P.clipped].name}</span>`);
   if (game.auto) pills.push('<span class="pill on">Following route ⏩</span>');
   if (P.onLadder) pills.push('<span class="pill">On ladder</span>');
@@ -103,7 +107,7 @@ export function updateHUD(dt) {
   if (promptOverride && performance.now() < promptUntil) pr = promptOverride;
   else {
     const camp = nearCamp(P.x, P.z);
-    if (camp) pr = `[E] ${camp.name} — rest, oxygen, forecast, save`;
+    if (camp) pr = game.free ? `[E] ${camp.name} — teleport, time of day` : `[E] ${camp.name} — rest, oxygen, forecast, save`;
     else if (P.clipped >= 0) {
       const other = nearestRope(P.x, P.z, P.clipped);
       pr = other.d < 5 ? `[E] Clip over to the ${ropes[other.rope].name}` : '';

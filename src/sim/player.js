@@ -165,7 +165,7 @@ export function updatePlayer(dt, ctl) {
         nx -= cv.ux * Math.sign(loc.u) * (Math.abs(loc.u) - 1.2); nz -= cv.uz * Math.sign(loc.u) * (Math.abs(loc.u) - 1.2);
         P.onLadder = true; continue;
       }
-      if (Math.abs(loc.v) < cv.w / 2 - 0.4) {
+      if (Math.abs(loc.v) < cv.w / 2 - 0.4 && !game.free) {
         P.x = nx; P.z = nz; P.y = field.height(nx, nz) - 20;
         die(`Fell into a crevasse in the ${region()}. Always cross on the ladders.`);
         return;
@@ -173,7 +173,7 @@ export function updatePlayer(dt, ctl) {
     }
     if (P.onLadder) { nx = P.x + (nx - P.x) * 0.45; nz = P.z + (nz - P.z) * 0.45; }
     const hn = field.height(nx, nz), stepGrade = (hn - h0) / Math.max(0.01, Math.hypot(nx - P.x, nz - P.z));
-    if (stepGrade > MOVE.maxGrade && P.clipped < 0) { emit('prompt', 'Too steep to climb here — find the route or a fixed rope', 1.2); nx = P.x; nz = P.z; }
+    if (stepGrade > MOVE.maxGrade && P.clipped < 0 && !game.free) { emit('prompt', 'Too steep to climb here — find the route or a fixed rope', 1.2); nx = P.x; nz = P.z; }
     [nx, nz] = seracCollide(nx, nz);
     if (P.clipped >= 0) {
       const pr = ropeProject(P.clipped, nx, nz, P.ropeHint); P.ropeHint = pr.i;
@@ -194,7 +194,7 @@ export function updatePlayer(dt, ctl) {
     else if (grade > 0.6) S.stamina -= 1.4 * (grade - 0.6) * dt;
     else S.stamina += 5 * (0.3 + 0.7 * smoothstep(55, 92, S.spo2)) * dt;
     // slips: steep faces are dangerous unless clipped into a fixed rope
-    if (P.clipped < 0 && !P.onLadder) {
+    if (P.clipped < 0 && !P.onLadder && !game.free) {
       const ang = Math.atan(field.faceSlope(P.x, P.z)) / D2R;
       if (ang > SLIP_ANGLE) {
         let risk = Math.pow((ang - SLIP_ANGLE) / 25, 2) * 0.9;
@@ -207,7 +207,7 @@ export function updatePlayer(dt, ctl) {
   } else {
     S.stamina += 14 * (0.3 + 0.7 * smoothstep(55, 92, S.spo2)) * dt;
     P.phase *= 0.9;
-    if (P.clipped < 0 && field.slope(P.x, P.z).mag > 2.2 && Math.random() < 0.6 * dt) startFall();
+    if (P.clipped < 0 && !game.free && field.slope(P.x, P.z).mag > 2.2 && Math.random() < 0.6 * dt) startFall();
   }
   if (S.stamina <= 0) { S.stamina = 0; if (!S.winded) toast('Out of breath — stop and recover.', 'warn'); S.winded = true; }
   if (S.winded && S.stamina > 25) S.winded = false;

@@ -3,7 +3,8 @@ import { OXYGEN, TURNAROUND_H } from '../config.js';
 import { fmt, timeOfDay, dayOf, hourOfDay, clamp } from '../core/math.js';
 import { on, emit, toast } from '../core/events.js';
 import { mulberry32 } from '../core/noise.js';
-import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, region, score } from '../sim/game.js';
+import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, region, score,
+  destinations, teleportTo, enterFreeViewing, setHour, setClearWeather } from '../sim/game.js';
 import { nearestRope, clipTo } from '../sim/player.js';
 import { resetHUD } from './hud.js';
 
@@ -16,6 +17,11 @@ function show(id) { for (const s of SCREENS) $(s).classList.toggle('hidden', s !
 export function initScreens(glCanvas) {
   canvas = glCanvas;
   $('btnNew').onclick = () => { emit('userGesture'); newGame(Math.floor(Math.random() * 1e9)); save(true); resetHUD(); introToasts(); resumePlay(); };
+  $('btnFree').onclick = () => {
+    emit('userGesture'); newGame(Math.floor(Math.random() * 1e9), { free: true }); resetHUD(); resumePlay();
+    toast('Free viewing: pick a camp or summit to teleport to. Press T at any time to open this panel again.', 'info', 7);
+    openTravel();
+  };
   $('btnContinue').onclick = () => { emit('userGesture'); if (load()) { resetHUD(); toast('Expedition loaded.', 'good'); resumePlay(); } };
   $('btnResume').onclick = () => resumePlay();
   $('btnLoadSave').onclick = () => { if (load()) { resetHUD(); toast('Loaded last save.', 'good'); resumePlay(); } };
@@ -26,6 +32,8 @@ export function initScreens(glCanvas) {
   $('btnWinNew').onclick = () => $('btnNew').onclick();
   $('campCard').addEventListener('click', onCampClick);
   on('openCamp', openCamp);
+  on('openTravel', () => openTravel());
+  on('teleported', () => resetHUD());
   on('death', showDeath);
   on('win', showWin);
   document.addEventListener('pointerlockchange', () => {
@@ -80,8 +88,40 @@ function introToasts() {
 function openCamp(camp) {
   currentCamp = camp; game.mode = 'camp'; game.auto = null;
   releasePointer();
-  renderCamp();
+  if (game.free) renderTravel(); else renderCamp();
   show('scrCamp');
+}
+/** Free-viewing panel: teleport to any camp or summit, set the time of day and the weather. */
+export function openTravel() {
+  if (game.mode !== 'play' && game.mode !== 'camp') return;
+  currentCamp = null; game.mode = 'camp'; game.auto = null;
+  releasePointer();
+  renderTravel();
+  show('scrCamp');
+}
+function renderTravel() {
+  const here = region(), hod = hourOfDay(game.time), clear = !!game.weather.clear;
+  const dests = destinations().map((d) => `<button data-act="tp" data-id="${d.id}" class="${d.summit ? 'primary' : ''}">${d.name}<br><span class="dim" style="font-size:11px">${fmt(d.elevation)} m</span></button>`).join('');
+  const hours = [[5.3, 'Sunrise'], [8, 'Morning'], [12, 'Noon'], [17, 'Afternoon'], [18.6, 'Sunset'], [1, 'Night']];
+  const time = hours.map(([h, n]) => `<button data-act="hour" data-h="${h}" ${Math.abs(hod - h) < 0.4 ? 'disabled' : ''}>${n}</button>`).join('');
+  $('campCard').innerHTML = `
+    <h2>Free viewing <span class="dim" style="font-weight:400">· ${here} · ${fmt(game.P.y)} m</span></h2>
+    <p>Teleport anywhere on the route. Survival systems are off — no hypoxia, cold or falls — and nothing is saved, so your
+      expedition save is kept. Walk, look around, or press <kbd>F</kbd> to follow the route from wherever you land.</p>
+    <h3>Teleport</h3>
+    <div class="btns dest">${dests}</div>
+    <h3>Time of day · Day ${dayOf(game.time)}, ${timeOfDay(game.time)}</h3>
+    <div class="btns">${time}</div>
+    <h3>Weather</h3>
+    <div class="btns">
+      <button data-act="clear" data-on="1" ${clear ? 'disabled' : ''}>Clear skies</button>
+      <button data-act="clear" data-on="0" ${clear ? '' : 'disabled'}>Real forecast weather</button>
+    </div>
+    <div class="btns" style="margin-top:16px">
+      <button data-act="new-exp">Start a real expedition</button>
+      ${hasSave() ? '<button data-act="continue-exp">Continue saved expedition</button>' : ''}
+      <button class="primary" data-act="leave-camp">Close</button>
+    </div>`;
 }
 function forecastRows() {
   const W = game.weather, rows = [], start = Math.ceil(game.time / 12) * 12, r = mulberry32(Math.floor(start) * 131 + game.S.seed);
@@ -129,6 +169,10 @@ function renderCamp() {
     <h3>Forecast — summit (8,849 m) winds</h3>
     <table class="fc"><tr><th>Period</th><th>Summit wind</th><th>Min temp South Col</th><th>Snow</th><th></th></tr>${forecastRows()}</table>
     <p class="note">Look for summit winds below ~40 km/h. Leave the South Col around 23:00 and turn around by ${TURNAROUND_H}:00.</p>
+    ${c.id === 'ebc' ? `<h3>Free viewing</h3>
+    <p class="note">Teleport to any camp or summit to look around. This switches to free viewing: survival systems turn off and
+      nothing is saved, so this expedition stays in your save — continue it later from the title screen.</p>
+    <div class="btns"><button data-act="free">Free viewing — teleport to a camp or summit</button></div>` : ''}
     <div class="btns" style="margin-top:14px">
       <button data-act="save">Save progress</button>${ropeBtn}
       <button class="primary" data-act="leave-camp">Leave camp</button>
@@ -138,6 +182,12 @@ function onCampClick(e) {
   const b = e.target.closest('button'); if (!b) return;
   const act = b.dataset.act, P = game.P;
   if (act === 'rest') { if (restHours(Number(b.dataset.h)) && game.mode === 'camp') renderCamp(); return; }
+  if (act === 'free') { save(true); enterFreeViewing(); renderTravel(); return; }
+  if (act === 'tp') { teleportTo(b.dataset.id); resumePlay(); return; }
+  if (act === 'hour') { setHour(Number(b.dataset.h)); renderTravel(); return; }
+  if (act === 'clear') { setClearWeather(b.dataset.on === '1'); renderTravel(); return; }
+  if (act === 'new-exp') { $('btnNew').onclick(); return; }
+  if (act === 'continue-exp') { $('btnContinue').onclick(); return; }
   if (act === 'o2') toggleO2();
   else if (act === 'save') save();
   else if (act === 'clip') clipTo(nearestRope(P.x, P.z).rope);
