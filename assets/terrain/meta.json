@@ -1,0 +1,23 @@
+{
+ "encoding": "height = (R * 256 + G) / 4 metres; B = glacier mask (core only)",
+ "origin": {
+  "lat": 27.988056,
+  "lon": 86.925278,
+  "note": "Mount Everest summit; x = east, z = south"
+ },
+ "source": "Copernicus GLO-30 DEM (ESA, distributed by AWS Open Data), summit elevations corrected to surveyed values",
+ "core": {
+  "x0": -10240,
+  "z0": -4608,
+  "cell": 15,
+  "nx": 1025,
+  "nz": 769
+ },
+ "backdrop": {
+  "x0": -46080,
+  "z0": -40960,
+  "cell": 160,
+  "nx": 577,
+  "nz": 513
+ }
+}
