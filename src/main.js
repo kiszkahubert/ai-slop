@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
 import { loadRoutes, campsFor } from './world/route.js';
-import { PEAKS } from './world/geo.js';
+import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
 import { createTerrainMaterial } from './world/terrainMaterial.js';
 import { buildProps } from './world/props.js';
@@ -40,12 +40,13 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 let env, terrain, backdrop, climber, rig;
 
 async function boot() {
-  await step('Loading the Copernicus GLO-30 elevation model…');
+  await step('Loading the Pléiades elevation model…');
   const meta = await (await fetch(TERRAIN.metaUrl)).json();
   const [field, back, routes] = await Promise.all([CoreField.load(meta), BackdropField.load(meta), loadRoutes()]);
+  alignClimbingSummits(routes);
   game.routes = routes; game.backdrop = back;
   game.camps = campsFor(routes);
-  await step('Refining the terrain to 7.5 m and kicking in the boot track…');
+  await step('Preparing the native 4 m terrain and boot track…');
   const t0 = performance.now();
   const top = (r, id) => ({ ...r.pts[r.pts.length - 1], e: PEAKS.find((p) => p.id === id).e });
   field.refine([routes.main, routes.lhotse], game.camps, 1, [top(routes.main, 'everest'), top(routes.lhotse, 'lhotse')]);

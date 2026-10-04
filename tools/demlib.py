@@ -6,7 +6,6 @@ is accurate to well under a metre per km across the play area.
 """
 import math, os
 import numpy as np
-import tifffile
 
 LAT0, LON0 = 27.988056, 86.925278            # Mount Everest summit
 _phi = math.radians(LAT0)
@@ -22,6 +21,7 @@ def xz_to_ll(x, z):
 class Mosaic:
     """Copernicus tiles (pixel-is-point, 1 arc-second, first row at the tile's north edge)."""
     def __init__(self, folder, lat_tiles=(27, 28), lon_tiles=(86, 87)):
+        import tifffile
         self.lat_top = max(lat_tiles) + 1
         self.lon_left = min(lon_tiles)
         n = 3600

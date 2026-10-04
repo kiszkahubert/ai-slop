@@ -141,11 +141,12 @@ def glacier_mask(h, g):
     return np.clip(gaussian_filter(m, 1.5), 0, 1)
 
 
-def astar(h, g, a, b, corridor=None):
+def astar(h, g, a, b, corridor=None, slope=None, penalty=None):
     """Least-cost path on the grid. Cost penalises steep path grades and steep side slopes,
     the way climbers pick lines; waypoints keep it on the real route."""
     cell = g['cell']; nz, nx = h.shape
-    gy, gx = np.gradient(h, cell); slope = np.hypot(gx, gy)
+    if slope is None:
+        gy, gx = np.gradient(h, cell); slope = np.hypot(gx, gy)
     def ij(p): return (int(round((p[1] - g['z0']) / cell)), int(round((p[0] - g['x0']) / cell)))
     s, t = ij(a), ij(b)
     pad = 60
@@ -165,6 +166,8 @@ def astar(h, g, a, b, corridor=None):
             grade = (h[v] - h[u]) / run
             sl = slope[v]
             c = run * (1 + 2.2 * grade * grade + 0.6 * sl * sl + 40 * max(0.0, sl - 1.3) ** 2)
+            if penalty is not None:
+                c *= penalty[v]
             nd = du + c
             if nd < dist.get(v, 1e18):
                 dist[v] = nd; prev[v] = u
@@ -191,11 +194,11 @@ def smooth_resample(pts, step=4.0, iters=3):
     return out * (1 - w) + sm * w
 
 
-def build_route(h, g, waypoints, tail=None):
+def build_route(h, g, waypoints, tail=None, slope=None, penalty=None):
     pts, tags = [], []
     for k in range(len(waypoints) - 1):
         a, b = waypoints[k], waypoints[k + 1]
-        seg = astar(h, g, a[1:], b[1:])
+        seg = astar(h, g, a[1:], b[1:], slope=slope, penalty=penalty)
         if pts: seg = seg[1:]
         pts += seg
     if tail is not None:
@@ -262,7 +265,7 @@ def main():
     meta = dict(encoding='height = (R * 256 + G) / 4 metres; B = glacier mask (core only)',
                 origin=dict(lat=27.988056, lon=86.925278, note='Mount Everest summit; x = east, z = south'),
                 source='Copernicus GLO-30 DEM (ESA, distributed by AWS Open Data), summit elevations corrected to surveyed values',
-                core=CORE, backdrop=BACK)
+                runtime=dict(refine=2, proceduralDetail=True), core=CORE, backdrop=BACK)
     json.dump(meta, open(os.path.join(out, 'terrain', 'meta.json'), 'w'), indent=1)
 
     def elev(p): return float(sample(core, CORE, [p[0]], [p[1]], order=1)[0])

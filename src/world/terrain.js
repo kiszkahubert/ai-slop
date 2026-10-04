@@ -118,7 +118,7 @@ export class TerrainLOD {
 }
 
 export function coreTerrainOptions() {
-  return { chunkCells: TERRAIN.chunkCells, levels: [1, 2, 4, 8, 16, 32], distances: TERRAIN.lodDistances, glacier: true, shadows: true };
+  return { chunkCells: TERRAIN.chunkCells, levels: [1, 2, 4, 8, 16, 32, 64], distances: TERRAIN.lodDistances, glacier: true, shadows: true };
 }
 export function backdropTerrainOptions(core) {
   return { chunkCells: TERRAIN.backdropChunkCells, levels: [1, 2, 4], distances: [12000, 30000], hideInside: core };

@@ -5,16 +5,23 @@
 </p>
 
 > **Certified AI slop.** This simulator was vibecoded by a large language model that has never been above sea level
-> and believes "acclimatization" is an Italian appetizer. The Copernicus elevation model is real, surveyed and
+> and believes "acclimatization" is an Italian appetizer. The Pléiades elevation model is real and
 > serious; everything wrapped around it was hallucinated and shipped without a human checking
 > whether the crevasses are load-bearing. The mountain is real. The code is vibecoded slop. If it kills you, that's a
 > feature.
 
 A browser mountaineering simulator of the Everest–Lhotse massif, built with Three.js (r160, loaded from the jsDelivr CDN).
 
-The mountain is real. The terrain is the **Copernicus GLO-30** elevation model at true scale: 15.4 × 11.5 km around
-the route, plus 92 × 82 km of the surrounding Himalaya on the horizon. Summit elevations are corrected to their
-surveyed values.
+The mountain is real. The climbing area uses the **4 m Pléiades DEM acquired on 23 March 2017**
+([Berthier, 2022](https://doi.org/10.5281/zenodo.6979691)) at true scale: 15.4 × 11.5 km around the route,
+plus 92 × 82 km of the surrounding Himalaya on the horizon. Copernicus GLO-30 fills gaps in the stereo data
+and supplies the distant landscape. Both climbing routes are within Pléiades coverage.
+
+The renderer keeps the native 4 m grid: it adds no procedural height noise or artificial ridge profile.
+A narrow boot track, camp terraces and local summit caps support gameplay. Summit endpoints are located
+from the new DEM and capped locally to their surveyed elevations.
+Slip exposure retains its 30 m sampling span so resolved ice bumps do not change the meaning of face steepness.
+Ladder fissures are fitted to the regenerated path to keep nearby bends clear of unprotected crossings.
 
 The route follows the actual line of the South Col route:
 
@@ -92,8 +99,8 @@ src/
   core/               math helpers, seeded noise, event bus, spatial index
   world/
     geo.js            lat/lon ↔ world projection (origin = Everest summit), named peaks
-    heightfield.js    loads the DEM tiles, refines 15 m → 7.5 m, levels the boot track, camp terraces,
-                      couloir walls / Geneva Spur rock mask
+    heightfield.js    loads the native 4 m terrain, levels the boot track and camp terraces,
+                      preserves the measured surface for face slopes, adds rock shading masks
     terrain.js        chunked LOD terrain with skirts (core + backdrop)
     terrainMaterial.js  snow / blue ice / rock / Yellow Band / debris shading, detail normals, Earth curvature
     route.js          route model, camps, fixed ropes, landmarks, region names
@@ -113,36 +120,49 @@ assets/
   terrain/core.png, backdrop.png, meta.json   heights as RGB (h = (R·256 + G) / 4 m), B = glacier mask
   route.json                                  generated route paths and waypoint tags
   ai-slop-badge.png                           badge above, vibecoded like the rest of it
-tools/                asset pipeline (Python) + run-python.mjs (cross-platform interpreter picker)
+tools/                Pléiades asset pipeline (Python), frozen Copernicus fallback, interpreter picker
 tests/                Playwright harness + gameplay tests; tests/unit/ node:test suites
 ```
 
 ## Rebuilding the terrain and route
 
 ```bash
-pip install numpy scipy tifffile imagecodecs pillow
-mkdir dem && cd dem
-for t in N27_00_E086_00 N28_00_E086_00 N27_00_E087_00 N28_00_E087_00; do
-  curl -O "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_${t}_DEM/Copernicus_DSM_COG_10_${t}_DEM.tif"
-  mv "Copernicus_DSM_COG_10_${t}_DEM.tif" "${t}.tif"
-done
-cd .. && npm run build-assets          # = node tools/run-python.mjs tools/build_assets.py --dem ./dem
+python -m pip install numpy scipy pillow pyproj
+mkdir dem
+curl -L --fail "https://zenodo.org/api/records/6979691/files/Khumbu_2017-03-23_DEM_4m.tif/content" -o dem/Khumbu_2017-03-23_DEM_4m.tif
+curl -L --fail "https://cdn.proj.org/us_nga_egm08_25.tif" -o dem/us_nga_egm08_25.tif
+npm run build-assets
 ```
 
 `tools/run-python.mjs` picks whichever interpreter really works (`python3`, `python` or the Windows `py -3`
-launcher). On Windows, `python3` is often only the Microsoft Store stub. On Windows, use PowerShell's
-`Invoke-WebRequest` or Git Bash for the download loop above, and `python -m pip install …` for the dependencies.
+launcher). On Windows, `python3` is often only the Microsoft Store stub. Use `curl.exe` in Windows PowerShell
+if `curl` is an alias. The source rasters are ignored by Git; they are not needed to run the already-built game.
 
-`build_assets.py` samples the DEM onto the game grids and restores the summit elevations. It raises only the upper
-part of each mountain, so the DEM's ridges stay intact. It also traces the Southeast Ridge crest and gives it the
-true South Summit, Hillary Step and summit profile. Finally it generates the route by least-cost pathfinding over the
-real slopes between surveyed waypoints.
+`build_pleiades_assets.py` verifies the Zenodo file checksum, respects pixel-centre georeferencing and NoData,
+converts the source heights to EGM2008 using the NGA geoid grid, and samples a native 4 m core. It blends into
+the frozen original assets in `tools/terrain-fallback` over 40 m at data boundaries. The archived file is **4 m**,
+even though the associated paper describes a 2 m version.
+
+The input vertical CRS is unspecified in the archive. The pipeline explicitly interprets its heights as WGS84
+ellipsoidal, consistent with Ames Stereo Pipeline output and the observed Everest height, and applies `H = h - N`.
+This is an interpretation of the source, not an independent survey validation. Source checksums, the transformation,
+fallback hashes, coverage and runtime settings are recorded in `assets/terrain/meta.json`.
+
+Routes are generated by least-cost pathfinding on an 8 m planning surface; rendering still uses the 4 m terrain.
+The summit ridge comes directly from the DEM rather than the old imposed profile. The Balcony is found near
+8,400 m on that crest, and summit endpoints follow the finer terrain's local maxima.
+
+The older Copernicus-only builder remains available as `npm run build-assets:copernicus`, requiring the four
+GLO-30 tiles listed in `tools/build_assets.py` and Python packages `tifffile` and `imagecodecs`. It overwrites the
+active assets, so use it only when deliberately restoring the legacy terrain.
 
 ## Tests and lint
 
 ```bash
 npm run lint                   # ESLint (eslint.config.js)
 npm run test:unit              # fast node:test suites: physiology, weather, route model, spatial index, saves
+npm run test:terrain           # Python regressions: GeoTIFF alignment, NoData, geoid conversion, asset metadata
+npm run verify:terrain         # with source files in dem/: verify encoded heights and complete route coverage
 npm run test:e2e               # Playwright: hazards, UI flows, free viewing, full Everest and Lhotse expeditions
 npm test                       # unit + e2e
 node tests/harness.mjs tests/hazards.json   # a single e2e suite
@@ -150,7 +170,7 @@ node tests/harness.mjs tests/hazards.json   # a single e2e suite
 
 The e2e harness serves three.js from `node_modules` when it is installed (override with `THREE_DIR`), so it runs
 offline. Software (SwiftShader) rendering makes screenshots slow, so each one may take up to `SHOT_TIMEOUT` ms
-(default 120000). GitHub Actions runs lint and the unit tests, then the e2e suites, on every push and pull request
+(default 120000). GitHub Actions runs lint, the unit and Python terrain tests, then the e2e suites, on every push and pull request
 (`.github/workflows/ci.yml`).
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
@@ -164,6 +184,13 @@ Add `?debug` to the URL for test keys: `T`/`G` teleport between waypoints and `K
 exposes a small API.
 
 ## Data
+
+Etienne Berthier (2022), *Pléiades DEM of 23 March 2017 – Khumbu region, Nepal*,
+[DOI 10.5281/zenodo.6979691](https://doi.org/10.5281/zenodo.6979691), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The game reprojects, converts heights, resamples and
+blends the data; walking-surface edits and local summit caps are additional modifications.
+
+NGA EGM2008 geoid grid, distributed by [PROJ](https://cdn.proj.org/us_nga_README.txt), public domain.
 
 Copernicus GLO-30 DEM © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS
 by the European Union and ESA, distributed via the AWS Open Data registry.

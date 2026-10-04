@@ -20,3 +20,12 @@ export const PEAKS = [
   { id: 'chooyu', name: 'Cho Oyu', lat: 28.094167, lon: 86.660833, e: 8188 },
   { id: 'amadablam', name: 'Ama Dablam', lat: 27.861667, lon: 86.861389, e: 6812 },
 ].map((p) => ({ ...p, ...llToXZ(p.lat, p.lon) }));
+
+// Compass/map markers follow the active DEM's summit endpoints. The projection
+// origin stays fixed, and the surveyed elevation targets remain unchanged.
+export function alignClimbingSummits(routes) {
+  for (const [id, route] of [['everest', routes.main], ['lhotse', routes.lhotse]]) {
+    const end = route.pts.at(-1), marker = PEAKS.find((p) => p.id === id);
+    Object.assign(marker, { x: end.x, z: end.z, ...xzToLL(end.x, end.z) });
+  }
+}

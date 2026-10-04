@@ -11,9 +11,10 @@ export const TERRAIN = {
   backdropUrl: 'assets/terrain/backdrop.png',
   metaUrl: 'assets/terrain/meta.json',
   routeUrl: 'assets/route.json',
-  refine: 2,                // core grid (15 m) is refined ×2 to 7.5 m at load, with fractal detail
-  chunkCells: 128,          // refined cells per terrain chunk (960 m)
-  lodDistances: [650, 1500, 3200, 6500, 13000],   // LOD 0..5 switch distances (m)
+  refine: 1,                // preserve the native 4 m Pléiades grid
+  faceSampleDistance: 15,   // face exposure uses the same 30 m span at any DEM resolution
+  chunkCells: 128,          // 512 m chunks keep the near-camera 4 m meshes bounded
+  lodDistances: [350, 900, 1800, 3600, 7200, 14000], // 4 m near the climber, coarser on the horizon
   backdropChunkCells: 48,
   earthRadius: 6371000,
 };
@@ -42,6 +43,6 @@ export const OXYGEN = {
 };
 
 export const DEATH_ZONE = 8000;
-// Unclipped climbers can slip on faces steeper than this (the 30 m DEM smooths the real 40-50°
-// Lhotse Face to 35-45°, so the threshold is set against the data, not the textbook angle).
+// Unclipped climbers can slip on faces steeper than this; measured face slopes
+// are sampled separately from the smoothed boot track.
 export const SLIP_ANGLE = 32;
