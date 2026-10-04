@@ -9,6 +9,7 @@ import { nearestRope, clipTo, startAutopilot } from '../sim/player.js';
 import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
 import { renderDebrief } from './debrief.js';
+import { QUALITY_PRESETS, currentQuality } from '../render/quality.js';
 import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const $ = (id) => document.getElementById(id);
@@ -20,8 +21,22 @@ function show(id) {
   document.body.dataset.screen = id || '';        // CSS hides HUD warnings under modal screens
 }
 
+/** Low / Medium / High buttons on the title and pause screens. */
+function renderQualityButtons() {
+  for (const box of document.querySelectorAll('[data-quality-buttons]')) {
+    box.innerHTML = Object.entries(QUALITY_PRESETS).map(([id, q]) => `<button data-quality="${id}" class="${id === currentQuality() ? 'active' : ''}">${q.label}</button>`).join('');
+  }
+}
+
 export function initScreens(glCanvas) {
   canvas = glCanvas;
+  renderQualityButtons();
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-quality]');
+    if (!b) return;
+    emit('setQuality', b.dataset.quality);
+    renderQualityButtons();
+  });
   $('btnNew').onclick = () => { emit('userGesture'); newGame(Math.floor(Math.random() * 1e9)); save(true); resetHUD(); introToasts(); resumePlay(); };
   $('btnFree').onclick = () => {
     emit('userGesture'); newGame(Math.floor(Math.random() * 1e9), { free: true }); resetHUD(); resumePlay();
