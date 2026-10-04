@@ -16,6 +16,7 @@ from build_assets import (BACK, MAIN_WAYPOINTS, LHOTSE_WAYPOINTS, build_route,
                           local_max, sample, trace_crest)
 from demlib import encode_png, ll_to_xz
 from pleiades import Fallback, GeoRaster, build_grid, checksum
+from build_nuptse_route import build_nuptse_route
 
 ROOT = Path(__file__).resolve().parent.parent
 CORE = dict(x0=-10240, z0=-4608, cell=4, nx=3841, nz=2881)
@@ -110,6 +111,7 @@ def main():
     lh_path[-1] = ltop[:2]
     lh_path[0] = junction
     lh_tags['lhotse'] = len(lh_path) - 1
+    nu_path, nu_tags = build_nuptse_route(core, CORE, main_path, main_tags, confidence)
     out = Path(args.out)
     (out / 'terrain').mkdir(parents=True, exist_ok=True)
     encode_png(core, out / 'terrain/core.png')
@@ -145,9 +147,11 @@ def main():
     (out / 'terrain/meta.json').write_text(json.dumps(meta, indent=2) + '\n')
     route = dict(note='Generated over the Pléiades terrain; measured summit ridge, 8 m route planning, 4 m render grid.',
                  main=dict(points=np.round(main_path, 1).tolist(), tags=main_tags),
-                 lhotse=dict(points=np.round(lh_path, 1).tolist(), tags=lh_tags))
+                 lhotse=dict(points=np.round(lh_path, 1).tolist(), tags=lh_tags),
+                 nuptse=dict(points=np.round(nu_path, 1).tolist(), tags=nu_tags,
+                             note='Authored north-face branch from Camp 2; not a surveyed climbing itinerary.'))
     (out / 'route.json').write_text(json.dumps(route) + '\n')
-    for name, path, tags in [('main', main_path, main_tags), ('lhotse', lh_path, lh_tags)]:
+    for name, path, tags in [('main', main_path, main_tags), ('lhotse', lh_path, lh_tags), ('nuptse', nu_path, nu_tags)]:
         print(f'{name}: {len(path)} points, {np.hypot(*np.diff(path, axis=0).T).sum()/1000:.2f} km', flush=True)
         for tag, i in sorted(tags.items(), key=lambda kv: kv[1]):
             height = sample(core, CORE, [path[i, 0]], [path[i, 1]])[0]

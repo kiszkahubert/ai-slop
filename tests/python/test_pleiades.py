@@ -92,9 +92,10 @@ class RasterTests(unittest.TestCase):
                              'frozen source bytes must match on every platform')
         with Image.open(ROOT / 'assets/terrain/core.png') as im:
             self.assertEqual(im.size, (meta['core']['nx'], meta['core']['nz']))
-        main, lh = route['main'], route['lhotse']
+        main, lh, nu = route['main'], route['lhotse'], route['nuptse']
         self.assertEqual(main['points'][main['tags']['yellowband']], lh['points'][lh['tags']['yellowband']])
-        for r in [main, lh]:
+        self.assertEqual(main['points'][main['tags']['c2']], nu['points'][nu['tags']['c2']])
+        for r in [main, lh, nu]:
             self.assertTrue(np.isfinite(r['points']).all())
 
 

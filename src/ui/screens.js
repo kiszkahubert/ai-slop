@@ -5,10 +5,11 @@ import { on, emit, toast } from '../core/events.js';
 import { mulberry32 } from '../core/noise.js';
 import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, region, score,
   destinations, teleportTo, enterFreeViewing, exitFreeViewing, setHour, setClearWeather, setSpeedMul } from '../sim/game.js';
-import { nearestRope, clipTo } from '../sim/player.js';
+import { nearestRope, clipTo, startAutopilot } from '../sim/player.js';
 import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
 import { renderDebrief } from './debrief.js';
+import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrDebrief', 'scrLoading'];
@@ -152,10 +153,11 @@ function renderTravel() {
 }
 function forecastRows() {
   const W = game.weather, rows = [], start = Math.ceil(game.time / 12) * 12, r = mulberry32(Math.floor(start) * 131 + game.S.seed);
+  const nuptse = currentCamp.route === 'nuptse';
   for (let k = 0; k < 10; k++) {
     const t0 = start + k * 12;
     let wsum = 0, tmin = 99, smax = 0;
-    for (let h = 0; h < 12; h++) { wsum += W.wind(8849, t0 + h, 1.15); smax = Math.max(smax, W.sample(t0 + h).S); tmin = Math.min(tmin, W.temperature(7900, t0 + h, 0, false)); }
+    for (let h = 0; h < 12; h++) { wsum += W.wind(nuptse ? 7861 : 8849, t0 + h, 1.15); smax = Math.max(smax, W.sample(t0 + h).S); tmin = Math.min(tmin, W.temperature(nuptse ? currentCamp.elevation : 7900, t0 + h, 0, false)); }
     const lead = (t0 - game.time) / 24;
     const wind = Math.max(5, wsum / 12 + (r() - 0.5) * 2 * lead * 7), snowp = clamp(smax * 100 + (r() - 0.5) * lead * 12, 0, 100);
     const v = wind < 40 && snowp < 45 ? ['Summit window', 'g'] : wind < 70 ? ['Marginal', 'w'] : ['Jet stream', 'b'];
@@ -178,7 +180,7 @@ function renderCamp() {
     <h3>Rest &amp; wait out the weather</h3>
     <div class="btns">
       <button data-act="rest" data-h="1">Rest 1 h</button><button data-act="rest" data-h="6">Rest 6 h</button><button data-act="rest" data-h="12">Rest 12 h</button>
-      <button data-act="rest" data-h="${(23 - hod + 24) % 24 || 24}">Rest until 23:00${c.id === 'c4' || c.id === 'lhotse_c4' ? ' (summit push)' : ''}</button>
+      <button data-act="rest" data-h="${(23 - hod + 24) % 24 || 24}">Rest until 23:00${['c4', 'lhotse_c4', 'nuptse_c3'].includes(c.id) ? ' (summit push)' : ''}</button>
       <button data-act="rest" data-h="${(5 - hod + 24) % 24 || 24}">Rest until 05:00</button>
     </div>
     <p class="note">Resting restores stamina and reduces exhaustion; sleeping lower recovers faster. Time spent high raises acclimatization.
@@ -193,9 +195,13 @@ function renderCamp() {
       <button data-act="o2">${S.o2on ? 'Turn oxygen off' : 'Turn oxygen on'}</button>
     </div>
     <p class="note">Carry at most ${OXYGEN.maxCarried} bottles. A full 4 L bottle (300 bar) weighs 3.6 kg and lasts ~10 h at 2 L/min, ~5 h at 4 L/min.</p>
-    <h3>Forecast — summit (8,849 m) winds</h3>
-    <table class="fc"><tr><th>Period</th><th>Summit wind</th><th>Min temp South Col</th><th>Snow</th><th></th></tr>${forecastRows()}</table>
-    <p class="note">Look for summit winds below ~40 km/h. Leave the South Col around 23:00 and turn around by ${TURNAROUND_H}:00.</p>
+    ${c.id === 'c2' ? `<h3>Choose your climb</h3>
+    <p class="note">Continue toward Everest and Lhotse, or take the purple branch across the Western Cwm to Nuptse.</p>
+    <div class="btns"><button data-act="follow" data-route="main">Follow toward Everest / Lhotse</button>
+      <button data-act="follow" data-route="nuptse">Climb Nuptse · purple route</button></div>` : ''}
+    <h3>Forecast — summit (${c.route === 'nuptse' ? '7,861' : '8,849'} m) winds</h3>
+    <table class="fc"><tr><th>Period</th><th>Summit wind</th><th>Min temp ${c.route === 'nuptse' ? 'High Camp' : 'South Col'}</th><th>Snow</th><th></th></tr>${forecastRows()}</table>
+    <p class="note">Look for summit winds below ~40 km/h. ${c.route === 'nuptse' ? 'Leave high camp early and plan a safe descent' : 'Leave the South Col around 23:00 and turn around'} by ${TURNAROUND_H}:00.</p>
     ${c.id === 'ebc' ? `<h3>Free viewing</h3>
     <p class="note">Teleport to any camp or summit to look around. This switches to free viewing: survival systems turn off and
       nothing is saved, so this expedition stays in your save — continue it later from the title screen.</p>
@@ -217,6 +223,7 @@ function onCampClick(e) {
   if (act === 'exit-free') { exitFreeViewing(); resetHUD(); resumePlay(); return; }
   if (act === 'new-exp') { $('btnNew').onclick(); return; }
   if (act === 'continue-exp') { $('btnContinue').onclick(); return; }
+  if (act === 'follow') { resumePlay(); startAutopilot({ routeName: b.dataset.route, direction: 1 }); return; }
   if (act === 'o2') toggleO2();
   else if (act === 'save') save();
   else if (act === 'clip') clipTo(nearestRope(P.x, P.z).rope);
@@ -235,23 +242,24 @@ function showDeath(cause) {
   $('deadStats').innerHTML = stats([
     ['Altitude at death', fmt(P.y) + ' m'], ['Highest point', fmt(S.maxAlt) + ' m'], ['Location', region()],
     ['Time', `Day ${dayOf(game.time)}, ${timeOfDay(game.time)}`],
-    ['Summits', [S.summits.everest && 'Everest', S.summits.lhotse && 'Lhotse'].filter(Boolean).join(' + ') || 'none'],
+    ['Summits', reachedSummits(S).map((c) => c.short).join(' + ') || 'none'],
     ['Hours in death zone without O₂', S.deathZoneHours.toFixed(1)],
   ]);
   setTimeout(() => show('scrDead'), 700);
 }
 function showWin() {
   releasePointer();
-  const S = game.S, both = S.summits.everest && S.summits.lhotse;
+  const S = game.S, reached = reachedSummits(S), all = reached.length === CLIMBS.length;
+  const remaining = CLIMBS.filter((c) => !S.summits[c.id]).map((c) => c.short).join(' or ');
   const when = (k) => (S.summits[k] ? `Day ${dayOf(S.summitTimes[k])} ${timeOfDay(S.summitTimes[k])}${S.summitNoO2[k] ? ' (no O₂!)' : ''}` : '—');
-  $('winText').textContent = both
-    ? 'Everest and Lhotse in one expedition — and back to the safety of the Western Cwm. An extraordinary climb.'
-    : `You summited ${S.summits.everest ? 'Mount Everest' : 'Lhotse'} and made it back to Camp 2. Keep climbing to also summit ${S.summits.everest ? 'Lhotse' : 'Everest'} for the double bonus, or end the expedition here.`;
+  $('winText').textContent = all
+    ? 'Everest, Lhotse and Nuptse in one expedition — and back to the safety of the Western Cwm. All three summits completed.'
+    : `You summited ${reached.map((c) => c.short).join(' + ')} and made it back to Camp 2. Keep climbing for ${remaining}, or end the expedition here.`;
   $('winStats').innerHTML = stats([
-    ['Score', fmt(score())], ['Everest', when('everest')], ['Lhotse', when('lhotse')], ['Highest point', fmt(S.maxAlt) + ' m'],
+    ['Score', fmt(score())], ...CLIMBS.map((c) => [c.short, when(c.id)]), ['Highest point', fmt(S.maxAlt) + ' m'],
     ['Expedition time', `${Math.floor(game.time / 24)} d ${Math.floor(game.time % 24)} h`], ['Frostbite', Math.round(S.frost) + '%'],
     ['Falls', S.falls], ['Distance walked', (S.distance / 1000).toFixed(1) + ' km'],
   ]);
-  $('btnWinContinue').classList.toggle('hidden', both);
+  $('btnWinContinue').classList.toggle('hidden', all);
   show('scrWin');
 }

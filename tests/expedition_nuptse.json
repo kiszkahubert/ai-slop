@@ -1,0 +1,8 @@
+[
+  {"click":"#btnNew"},
+  {"wait":300},
+  {"eval":"window.__target='nuptse';0"},
+  {"script":"tests/expedition.js","expect":"r.won && r.credited && r.autoStopped"},
+  {"wait":500},
+  {"script":"tests/nuptse-ui.js","expect":"r.win && r.stats && r.continue && r.debrief && r.journal"}
+]

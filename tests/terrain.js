@@ -5,9 +5,10 @@ const junction = routes.main.point('yellowband'), branch = routes.lhotse.point('
 const sample = f.height(-7000, 3000), source = f.base.height(-7000, 3000);
 return fetch('assets/terrain/meta.json').then((response) => response.json()).then((meta) => ({
   cell: f.cell, nodes: f.h.length, baseCell: f.base.cell,
-  everest: peak(routes.main), lhotse: peak(routes.lhotse),
+  everest: peak(routes.main), lhotse: peak(routes.lhotse), nuptse: peak(routes.nuptse),
   measuredOffTrack: sample === source,
   balcony: f.height(routes.main.point('balcony').x, routes.main.point('balcony').z),
   connected: Math.hypot(junction.x - branch.x, junction.z - branch.z) < 0.01,
+  nuptseConnected: Math.hypot(routes.main.point('c2').x - routes.nuptse.point('c2').x, routes.main.point('c2').z - routes.nuptse.point('c2').z) < 0.01,
   source: meta.provenance.doi, proceduralDetail: f.proceduralDetail,
 }));

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { Route, campsFor, ropeDefs, regionName } from '../../src/world/route.js';
 
 const data = JSON.parse(fs.readFileSync(new URL('../../assets/route.json', import.meta.url)));
-const routes = { main: new Route('main', data.main), lhotse: new Route('lhotse', data.lhotse) };
+const routes = Object.fromEntries(['main', 'lhotse', 'nuptse'].map((k) => [k, new Route(k, data[k])]));
 
 test('the main route runs from Base Camp to the summit of Everest', () => {
   const m = routes.main;
@@ -38,7 +38,7 @@ test('Route.nearest (indexed) agrees with the windowed search and finds on-route
 
 test('camps, ropes and region names', () => {
   const camps = campsFor(routes);
-  assert.deepEqual(camps.map((c) => c.id), ['ebc', 'c1', 'c2', 'c3', 'c4', 'lhotse_c4']);
+  assert.deepEqual(camps.map((c) => c.id), ['ebc', 'c1', 'c2', 'c3', 'c4', 'lhotse_c4', 'nuptse_c3']);
   assert.equal(camps[0].stock, Infinity);
   const ropes = ropeDefs(routes);
   assert.ok(ropes.every((r) => r.s1 > r.s0));
@@ -49,4 +49,18 @@ test('camps, ropes and region names', () => {
   const top = routes.main.pts.at(-1);
   assert.equal(regionName(routes, camps, top.x, top.z, 8849), 'Summit of Mount Everest');
   assert.equal(regionName(routes, camps, 14000, 14000, 5000), 'Khumbu Glacier');     // far away: no crash
+});
+
+test('Nuptse connects exactly at Camp 2 and climbs the north face to the main summit', () => {
+  const n = routes.nuptse;
+  assert.deepEqual(n.point('c2'), routes.main.point('c2'));
+  const order = ['c2', 'nuptse_bergschrund', 'nuptse_c3', 'nuptse_rib', 'nuptse'].map((t) => n.s(t));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.ok(n.L > 2000 && n.L < 5000);
+  const p = n.pts.at(-1);
+  assert.ok(Math.hypot(p.x + 3792, p.z - 2288) < 1);
+  assert.equal(regionName(routes, campsFor(routes), p.x, p.z, 7861), 'Summit of Nuptse');
+  const ropes = ropeDefs(routes).find((r) => r.name === 'Nuptse north face fixed ropes');
+  assert.ok(ropes.s0 < n.s('nuptse_bergschrund') && ropes.s1 > n.L - 2);
+  assert.equal(campsFor(routes).find((c) => c.id === 'nuptse_c3').routeIndex, 2);
 });

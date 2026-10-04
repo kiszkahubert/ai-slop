@@ -15,7 +15,7 @@ A browser mountaineering simulator of the Everest–Lhotse massif, built with Th
 The mountain is real. The climbing area uses the **4 m Pléiades DEM acquired on 23 March 2017**
 ([Berthier, 2022](https://doi.org/10.5281/zenodo.6979691)) at true scale: 15.4 × 11.5 km around the route,
 plus 92 × 82 km of the surrounding Himalaya on the horizon. Copernicus GLO-30 fills gaps in the stereo data
-and supplies the distant landscape. Both climbing routes are within Pléiades coverage.
+and supplies the distant landscape. All three climbing routes are within Pléiades coverage.
 
 The renderer keeps the native 4 m grid: it adds no procedural height noise or artificial ridge profile.
 A narrow boot track, camp terraces and local summit caps support gameplay. Summit endpoints are located
@@ -35,13 +35,23 @@ The route follows the actual line of the South Col route:
 
 The Lhotse branch turns right at the Yellow Band, goes to Lhotse Camp 4 and climbs the Reiss Couloir.
 
-To win, stand on Everest (8,849 m) or Lhotse (8,516 m) and get back down to Camp 2 alive. Doing both earns a bonus.
+The **Nuptse branch** leaves Camp 2, crosses the Western Cwm and climbs the north face via Nuptse High Camp
+(about 6,800 m) and the north rib to the main summit (7,861 m). Follow the **purple wands and fixed ropes**;
+at Camp 2, press **E** and choose **Climb Nuptse**. Descending it returns to Camp 2.
+The 2.67 km line is authored for gameplay using least-cost paths over the DEM. The Cwm approach and north rib
+are inspired by [published ascent accounts](https://publications.americanalpineclub.org/articles/12200440702/Asia-Nepal-Malahangur-Asia-Nepal-Khumbu-Nuptse-North-Face-The-Crystal-Snake);
+the path, fixed ropes and camp are not a surveyed climbing itinerary.
+
+To win, stand on Everest (8,849 m), Lhotse (8,516 m) or Nuptse (7,861 m) and get back down to Camp 2 alive.
+Everest and Lhotse together retain their bonus; all three summits earn an additional bonus. Older saves gain
+Nuptse progress and high-camp stock while preserving the existing expedition.
 
 ## Free viewing
 
 To look around, choose **Free viewing** on the title screen, or open the **Base Camp** menu (E) during an expedition.
 You can teleport to any camp (Base Camp, Camps 1–4, Lhotse Camp 4), the Icefall, the Yellow Band, the Balcony, the
-South Summit, the Hillary Step, or the summits of Everest and Lhotse. Press **T** at any time to reopen the panel. It
+South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or any of the three summits.
+Press **T** at any time to reopen the panel. It
 also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
 
 Survival systems are off in free viewing: no hypoxia, cold, falls or crevasses. Nothing is saved, so the expedition
@@ -146,6 +156,8 @@ mkdir dem
 curl -L --fail "https://zenodo.org/api/records/6979691/files/Khumbu_2017-03-23_DEM_4m.tif/content" -o dem/Khumbu_2017-03-23_DEM_4m.tif
 curl -L --fail "https://cdn.proj.org/us_nga_egm08_25.tif" -o dem/us_nga_egm08_25.tif
 npm run build-assets
+# To regenerate only the Nuptse branch on the shipped Pléiades terrain:
+npm run build-route:nuptse
 ```
 
 `tools/run-python.mjs` picks whichever interpreter really works (`python3`, `python` or the Windows `py -3`
@@ -177,7 +189,7 @@ npm run lint                   # ESLint (eslint.config.js)
 npm run test:unit              # fast node:test suites: physiology, weather, route model, spatial index, saves
 npm run test:terrain           # Python regressions: GeoTIFF alignment, NoData, geoid conversion, asset metadata
 npm run verify:terrain         # with source files in dem/: verify encoded heights and complete route coverage
-npm run test:e2e               # Playwright: hazards, UI flows, free viewing, skis, full Everest and Lhotse expeditions
+npm run test:e2e               # Playwright: hazards, UI, free viewing, skis, full Everest, Lhotse and Nuptse expeditions
 npm test                       # unit + e2e
 node tests/harness.mjs tests/hazards.json   # a single e2e suite
 ```

@@ -5,8 +5,7 @@ import { fmt, timeOfDay, dayOf, clamp } from '../core/math.js';
 import { Weather } from './weather.js';
 import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyBottle, spo2Target } from './physiology.js';
 import { resetDebrief, recordSample } from './debrief.js';
-import { LANDMARKS, regionName } from '../world/route.js';
-import { PEAKS } from '../world/geo.js';
+import { LANDMARKS, regionName, CLIMBS, reachedSummits } from '../world/route.js';
 
 const SAVE_KEY = 'everestSim.v2.save';
 
@@ -28,8 +27,8 @@ function freshStats(seed) {
   return {
     seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
     o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
-    summits: { everest: false, lhotse: false }, summitTimes: {}, summitNoO2: {},
-    usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(game.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
+    summits: Object.fromEntries(CLIMBS.map((c) => [c.id, false])), summitTimes: {}, summitNoO2: {},
+    usedO2InDZ: false, usedO2Above7000: false, deathZoneHours: 0, stock: Object.fromEntries(game.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
     visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
   };
 }
@@ -74,7 +73,8 @@ export function checkProgress() {
   const { S, P, routes } = game;
   if (P.y > S.maxAlt) S.maxAlt = P.y;
   if (game.free) return;            // free viewing: no landmarks, summits or win
-  for (const route of [routes.main, routes.lhotse]) for (const [tag, i] of Object.entries(route.tags)) {
+  if (P.y > 7000 && o2Flowing(S)) S.usedO2Above7000 = true;
+  for (const route of Object.values(routes)) for (const [tag, i] of Object.entries(route.tags)) {
     if (S.landmarks[tag] || !LANDMARKS[tag]) continue;
     const p = route.pts[i];
     if (Math.hypot(p.x - P.x, p.z - P.z) < 30) { S.landmarks[tag] = true; toast(LANDMARKS[tag], 'info', 7); }
@@ -90,21 +90,18 @@ export function checkProgress() {
     S.inDZ = true; emit('deathzone');
     if (!o2Flowing(S)) toast('You are above 8,000 m without supplemental oxygen. Press O!', 'bad', 6);
   } else if (P.y < DEATH_ZONE - 20) S.inDZ = false;
-  const ev = routes.main.pts[routes.main.pts.length - 1], lh = routes.lhotse.pts[routes.lhotse.pts.length - 1];
-  if (!S.summits.everest && Math.hypot(P.x - ev.x, P.z - ev.z) < 10 && P.y > 8835) {
-    S.summits.everest = true; S.summitTimes.everest = game.time; S.summitNoO2.everest = !S.usedO2InDZ;
-    S.maxAlt = Math.max(S.maxAlt, PEAKS.find((k) => k.id === 'everest').e);   // you stood on the surveyed summit
-    toast('SUMMIT! You are standing on top of the world — Mount Everest, 8,849 m. Now get down alive.', 'good', 10);
-    emit('summit', 'everest');
-  }
-  if (!S.summits.lhotse && Math.hypot(P.x - lh.x, P.z - lh.z) < 10 && P.y > 8500) {
-    S.summits.lhotse = true; S.summitTimes.lhotse = game.time; S.summitNoO2.lhotse = !S.usedO2InDZ;
-    S.maxAlt = Math.max(S.maxAlt, PEAKS.find((k) => k.id === 'lhotse').e);
-    toast('SUMMIT! Lhotse, 8,516 m — the fourth-highest mountain on Earth. Now descend to Camp 2.', 'good', 10);
-    emit('summit', 'lhotse');
+  for (const c of CLIMBS) {
+    const p = routes[c.route].pts.at(-1);
+    if (!S.summits[c.id] && Math.hypot(P.x - p.x, P.z - p.z) < 10 && P.y > c.minElevation) {
+      S.summits[c.id] = true; S.summitTimes[c.id] = game.time;
+      S.summitNoO2[c.id] = !(c.e > DEATH_ZONE ? S.usedO2InDZ : S.usedO2Above7000);
+      S.maxAlt = Math.max(S.maxAlt, c.e);
+      toast(`SUMMIT! ${c.name}, ${fmt(c.e)} m. Now descend to Camp 2.`, 'good', 10);
+      emit('summit', c.id);
+    }
   }
   const c2 = game.camps.find((c) => c.id === 'c2');
-  const n = (S.summits.everest ? 1 : 0) + (S.summits.lhotse ? 1 : 0);
+  const n = reachedSummits(S).length;
   if (n > S.winShownFor && Math.hypot(c2.x - P.x, c2.z - P.z) < 35) {
     S.winShownFor = n; game.mode = 'won'; game.auto = null; emit('win');
   }
@@ -113,9 +110,9 @@ export function checkProgress() {
 export function score() {
   const S = game.S;
   let s = 0;
-  if (S.summits.everest) s += 1000 * (S.summitNoO2.everest ? 1.5 : 1);
-  if (S.summits.lhotse) s += 700 * (S.summitNoO2.lhotse ? 1.5 : 1);
+  for (const c of reachedSummits(S)) s += c.points * (S.summitNoO2[c.id] ? 1.5 : 1);
   if (S.summits.everest && S.summits.lhotse) s += 1500;
+  if (reachedSummits(S).length === CLIMBS.length) s += 1000;
   s += Math.round(S.health * 3) - Math.round(S.frost * 4) - S.falls * 50 - Math.round(Math.max(0, game.time - 96) * 2);
   return Math.max(0, s);
 }
@@ -217,6 +214,10 @@ export function load() {
   const d = readSave();
   if (!d) return false;
   game.S = d.S; game.S.stock.ebc = Infinity;       // JSON stores Infinity as null
+  // Older v2 saves predate Nuptse; keep their inventory and completed summits.
+  game.S.summits.nuptse ??= false;
+  game.S.usedO2Above7000 ??= !!game.S.usedO2InDZ;
+  for (const c of game.camps) game.S.stock[c.id] ??= c.stock;
   Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1, ski: null });
   game.P.y = game.field.height(game.P.x, game.P.z);
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
@@ -229,7 +230,7 @@ export function load() {
 // ---------------- free viewing
 /** Places you can teleport to in free viewing, in route order. */
 export function destinations() {
-  const m = game.routes.main, l = game.routes.lhotse;
+  const m = game.routes.main, l = game.routes.lhotse, n = game.routes.nuptse;
   const list = [
     ['ebc', 'Everest Base Camp', m, m.s('ebc') + 20, 1],
     ['icefall_mid', 'Khumbu Icefall', m, m.s('icefall_mid'), 1],
@@ -245,10 +246,14 @@ export function destinations() {
     ['lhotse_c4', 'Lhotse Camp 4', l, l.s('lhotse_c4'), 1],
     ['couloir', 'Lhotse Couloir', l, l.s('couloir'), 1],
     ['lhotse', 'Summit of Lhotse', l, l.L - 7, 1],
+    ['nuptse_bergschrund', 'Nuptse North Face', n, n.s('nuptse_bergschrund'), 1],
+    ['nuptse_c3', 'Nuptse High Camp', n, n.s('nuptse_c3'), 1],
+    ['nuptse_rib', 'Nuptse North Rib', n, n.s('nuptse_rib'), 1],
+    ['nuptse', 'Summit of Nuptse', n, n.L, -1],
   ];
   return list.map(([id, name, route, s, dir]) => {
-    const summit = id === 'everest' || id === 'lhotse', p = route.at(s);
-    const elevation = summit ? PEAKS.find((k) => k.id === id).e : game.field.height(p.x, p.z);   // summits: surveyed height
+    const climb = CLIMBS.find((c) => c.id === id), summit = !!climb, p = route.at(s);
+    const elevation = summit ? climb.e : game.field.height(p.x, p.z);   // summits: surveyed height
     return { id, name, route, s, dir, elevation, summit };
   });
 }
@@ -301,7 +306,7 @@ export function placePlayer(x, z, yaw) {
 export function teleportTo(id) {
   const d = destinations().find((x) => x.id === id);
   if (!d) return false;
-  const p = d.route.at(d.s), q = d.route.at(d.s + d.dir * 25);
+  const p = d.route.at(d.s), q = id === 'nuptse' ? game.routes.main.pts.at(-1) : d.route.at(d.s + d.dir * 25);
   placePlayer(p.x, p.z, Math.atan2(-(q.x - p.x), -(q.z - p.z)));
   game.view.pitch = d.summit ? 0.08 : 0.02;
   toast(`${d.name} — ${fmt(d.elevation)} m`, 'good', 3);

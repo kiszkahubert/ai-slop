@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { fmt } from '../core/math.js';
 import { makeNoise2D, mulberry32 } from '../core/noise.js';
-import { ropeDefs } from './route.js';
+import { ropeDefs, CLIMBS } from './route.js';
 import { routeCrevasse } from './routeHazards.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
@@ -95,7 +95,8 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
   }
 
   // ---------------- summits
-  for (const [route, title] of [[routes.main, 'Everest summit'], [routes.lhotse, 'Lhotse summit']]) {
+  for (const c of CLIMBS) {
+    const route = routes[c.route], title = `${c.short} summit`;
     const p = route.pts[route.pts.length - 1], y = H(p.x, p.z);
     prayerFlags(scene, field, p.x, y + 1.5, p.z, 5, 10, 1.4, r);
     const l = makeLabel(scene, title, fmt(y) + ' m'); l.position.set(p.x, y + 30, p.z); world.labels.push(l);
@@ -105,7 +106,8 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
   const poles = instanced(scene, new THREE.CylinderGeometry(0.025, 0.025, 1.5, 5), new THREE.MeshStandardMaterial({ color: 0x5a4632 }), 1200, false);
   const flagGeo = new THREE.PlaneGeometry(0.4, 0.26); flagGeo.translate(0.2, 0, 0);
   const flags = instanced(scene, flagGeo, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.8 }), 1200, false);
-  for (const [route, col] of [[routes.main, 0xff3b1f], [routes.lhotse, 0x1fa8ff]]) {
+  for (const c of CLIMBS) {
+    const route = routes[c.route], col = c.color;
     let side = 1;
     for (let s = 12; s < route.L - 5; s += 28) {
       const p = route.at(s), x = p.x - p.dz * 2.3 * side, z = p.z + p.dx * 2.3 * side; side = -side;
@@ -222,7 +224,7 @@ function rope(scene, field, d) {
   stakes.count = 0;
   for (let i = 0; i < pts.length; i += 10) add(stakes, pts[i].x, pts[i].y - 0.45, pts[i].z);
   finish(stakes); scene.add(stakes);
-  return { name: d.name, pts, color: d.color };
+  return { name: d.name, pts, color: d.color, route: d.route };
 }
 
 function ribbon(field, cv, width, lift, mat) {

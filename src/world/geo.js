@@ -24,7 +24,8 @@ export const PEAKS = [
 // Compass/map markers follow the active DEM's summit endpoints. The projection
 // origin stays fixed, and the surveyed elevation targets remain unchanged.
 export function alignClimbingSummits(routes) {
-  for (const [id, route] of [['everest', routes.main], ['lhotse', routes.lhotse]]) {
+  for (const [id, route] of [['everest', routes.main], ['lhotse', routes.lhotse], ['nuptse', routes.nuptse]]) {
+    if (!route) continue;
     const end = route.pts.at(-1), marker = PEAKS.find((p) => p.id === id);
     Object.assign(marker, { x: end.x, z: end.z, ...xzToLL(end.x, end.z) });
   }

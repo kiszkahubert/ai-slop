@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
-import { loadRoutes, campsFor } from './world/route.js';
+import { loadRoutes, campsFor, CLIMBS } from './world/route.js';
 import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
 import { createTerrainMaterial } from './world/terrainMaterial.js';
@@ -51,7 +51,7 @@ async function boot() {
   await step('Preparing the native 4 m terrain and boot track…');
   const t0 = performance.now();
   const top = (r, id) => ({ ...r.pts[r.pts.length - 1], e: PEAKS.find((p) => p.id === id).e });
-  field.refine([routes.main, routes.lhotse], game.camps, 1, [top(routes.main, 'everest'), top(routes.lhotse, 'lhotse')]);
+  field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)));
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
   await step('Building terrain chunks…');
@@ -101,7 +101,7 @@ function frame(now) {
 }
 
 // ---------------- debugging / automated tests
-const all = () => [...game.routes.main.pts.filter((_, i) => Object.values(game.routes.main.tags).includes(i)), ...game.routes.lhotse.pts.slice(-1)];
+const all = () => Object.values(game.routes).flatMap((r) => r.pts.filter((_, i) => Object.values(r.tags).includes(i)));
 let dbgIdx = 0;
 const teleport = (x, z) => placePlayer(x, z);
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];

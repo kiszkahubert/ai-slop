@@ -50,7 +50,7 @@ def main():
         result[name] = dict(samples=len(i), max_encoding_error_m=float(error.max()),
                             stereo_samples=int(np.sum(w > 0)), native_samples=int(np.sum(w >= .99999)))
     route = json.loads((ROOT / 'assets/route.json').read_text())
-    for name in ['main', 'lhotse']:
+    for name in ['main', 'lhotse', 'nuptse']:
         points = np.array(route[name]['points'])
         lat, lon = xz_to_ll(*points.T)
         w = stereo.weight(lat, lon)

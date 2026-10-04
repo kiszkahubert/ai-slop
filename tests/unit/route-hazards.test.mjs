@@ -34,8 +34,8 @@ test('the new Icefall crossing that killed an on-route climber is fitted or relo
 test('climbing summit markers follow the regenerated route endpoints', () => {
   const original = PEAKS.map((p) => ({ ...p }));
   try {
-    alignClimbingSummits({ main: { pts: [{ x: -12, z: 4 }] }, lhotse: { pts: [{ x: 836, z: 2880 }] } });
-    for (const [id, x, z] of [['everest', -12, 4], ['lhotse', 836, 2880]]) {
+    alignClimbingSummits({ main: { pts: [{ x: -12, z: 4 }] }, lhotse: { pts: [{ x: 836, z: 2880 }] }, nuptse: { pts: [{ x: -3792, z: 2288 }] } });
+    for (const [id, x, z] of [['everest', -12, 4], ['lhotse', 836, 2880], ['nuptse', -3792, 2288]]) {
       const p = PEAKS.find((p) => p.id === id), projected = llToXZ(p.lat, p.lon);
       assert.deepEqual([p.x, p.z], [x, z]);
       assert.ok(Math.abs(projected.x - x) < 1e-7 && Math.abs(projected.z - z) < 1e-7);
