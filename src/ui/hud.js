@@ -70,9 +70,9 @@ export function updateHUD(dt) {
   el.oFlow.textContent = S.flow + ' L/min';
   el.oFill.style.width = (cur / OXYGEN.bottleBar) * 100 + '%';
   el.oBar.textContent = S.tanks.length ? Math.round(cur) + ' bar' : 'none';
-  const mins = S.tanks.length ? (cur * OXYGEN.bottleLitres) / S.flow : 0;
+  const mins = S.tanks.length ? (Math.max(0, cur - OXYGEN.emptyBar) * OXYGEN.bottleLitres) / S.flow : 0;
   el.oTime.textContent = S.tanks.length ? `${Math.floor(mins / 60)}h ${String(Math.floor(mins % 60)).padStart(2, '0')}m at ${S.flow} L/min` : 'No bottle';
-  const spare = Math.max(0, S.tanks.length - 1), spareGas = S.tanks.slice(1).reduce((a, p) => a + p, 0);
+  const spare = Math.max(0, S.tanks.length - 1), spareGas = S.tanks.slice(1).reduce((a, p) => a + Math.max(0, p - OXYGEN.emptyBar), 0);
   el.oSpare.textContent = spare ? `${spare} (${Math.round((spareGas * OXYGEN.bottleLitres) / S.flow / 60)}h more)` : 'none';
   el.oLoad.textContent = packLoad(S).toFixed(1) + ' kg';
   // conditions
@@ -97,7 +97,7 @@ export function updateHUD(dt) {
   if (P.onLadder) pills.push('<span class="pill">On ladder</span>');
   if (S.spo2 < 65) pills.push('<span class="pill alert flash">Severe hypoxia</span>');
   if (S.o2on && !flowing) pills.push('<span class="pill alert">Oxygen empty</span>');
-  if (flowing && cur < 40) pills.push('<span class="pill alert">Bottle low</span>');
+  if (flowing && cur < OXYGEN.lowBar) pills.push('<span class="pill alert">Bottle low</span>');
   if (S.frost > 60) pills.push('<span class="pill alert">Frostbite</span>');
   if (S.exh > 80) pills.push('<span class="pill alert">Exhausted</span>');
   if (env.sunEl < 0.03) pills.push('<span class="pill">Headlamp</span>');

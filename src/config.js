@@ -37,6 +37,8 @@ export const OXYGEN = {
   gasKg: 0.6,
   baseLoadKg: 13,
   flowBenefit: [0, 1000, 1800, 2400, 2900],   // metres of "altitude removed" per L/min setting
+  emptyBar: 10,             // residual pressure: at or below this a bottle no longer delivers and counts as empty
+  lowBar: 40,               // "bottle low" warning
 };
 
 export const DEATH_ZONE = 8000;

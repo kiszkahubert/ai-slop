@@ -61,8 +61,12 @@ export class CoreField extends GridField {
     return f;
   }
 
-  /** Refine to 7.5 m, add detail, level the boot track and cut camp terraces. */
-  refine(routes, camps, seed = 1) {
+  /**
+   * Refine to 7.5 m, add detail, level the boot track and cut camp terraces.
+   * summits: [{ x, z, e }] - points snapped to their surveyed elevation (the smoothed track profile
+   * would otherwise shave a few metres off a sharp top).
+   */
+  refine(routes, camps, seed = 1, summits = []) {
     const R = TERRAIN.refine, B = this.base, noise = makeNoise2D(mulberry32(seed));
     const nx = (B.nx - 1) * R + 1, nz = (B.nz - 1) * R + 1, cell = B.cell / R;
     const H = new Float32Array(nx * nz);
@@ -161,6 +165,10 @@ export class CoreField extends GridField {
         if (td < 6.5 && tRef[o] >= 0) {
           const w = 1 - smoothstep(1.7, 6.5, td);
           h = lerp(h, trackHeight(x, z, tRef[o]), w);
+        }
+        for (const s of summits) {
+          const d = Math.hypot(x - s.x, z - s.z);
+          if (d < 10) h = lerp(h, s.e, 1 - smoothstep(2, 10, d));
         }
         H[o] = h;
       }

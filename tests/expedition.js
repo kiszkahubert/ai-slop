@@ -9,9 +9,9 @@ const stat = (tag) => log.push(`${tag}: Day ${Math.floor(g.time / 24) + 1} ${(g.
 const face = (route, s, dir) => { const a = route.at(s), b = route.at(s + dir * 10); g.view.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z)); };
 const nearS = (route) => route.nearest(g.P.x, g.P.z).s;
 // follow the route until the autopilot stops itself; returns false if the climber died
-function follow(route, dir, maxSeconds = 4000) {
+function follow(route, dir, maxSeconds = 4000, nonstop = false) {
   face(route, nearS(route), dir);
-  if (!W.startAutopilot()) return false;
+  if (!W.startAutopilot({ nonstop })) return false;
   let t = 0;
   while (g.auto && g.mode === 'play' && t < maxSeconds) {
     W.simStep(1 / 30, { dx: 0, dz: 0 }); t += 1 / 30;
@@ -46,10 +46,9 @@ if (target === 'everest') {
   follow(R.lhotse, 1); stat('summit push');
 }
 if (g.mode !== 'play') return { log, cause: g.S.cause };
-// descend to Camp 2 (the autopilot stops at each camp on the way)
-for (let k = 0; k < 6 && g.mode === 'play'; k++) {
-  const route = target === 'lhotse' && R.lhotse.nearest(g.P.x, g.P.z).d < R.main.nearest(g.P.x, g.P.z).d ? R.lhotse : R.main;
-  follow(route, -1);
-}
+// descend to Camp 2 in one go (Shift+F: non-stop; the win at Camp 2 ends it)
+const descent = target === 'lhotse' ? R.lhotse : R.main;
+follow(descent, -1, 8000, true);
+log.push(`descent stops: ${g.mode === 'won' ? 'none (reached Camp 2 non-stop)' : 'stopped at ' + Math.round(g.P.y) + ' m'}`);
 stat('descent');
 return { log, cause: g.S.cause, summits: g.S.summits, won: g.mode === 'won' };

@@ -3,20 +3,21 @@ import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
 import { loadRoutes, campsFor } from './world/route.js';
+import { PEAKS } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
 import { createTerrainMaterial } from './world/terrainMaterial.js';
 import { buildProps } from './world/props.js';
 import { Environment } from './world/environment.js';
 import { makeClimber } from './render/climber.js';
 import { CameraRig } from './render/camera.js';
-import { game, newGame, restHours } from './sim/game.js';
+import { game, newGame, restHours, placePlayer } from './sim/game.js';
 import { simStep } from './sim/step.js';
 import { stepPhysiology } from './sim/physiology.js';
 import { startAutopilot, interact, nearestRope } from './sim/player.js';
 import { initInput, manualControl, keys } from './input.js';
 import { initAudio, updateAudio } from './audio.js';
 import { initToasts } from './ui/toast.js';
-import { initHUD, updateHUD, resetHUD } from './ui/hud.js';
+import { initHUD, updateHUD } from './ui/hud.js';
 import { initScreens, showTitle } from './ui/screens.js';
 
 const params = new URLSearchParams(location.search);
@@ -46,7 +47,8 @@ async function boot() {
   game.camps = campsFor(routes);
   await step('Refining the terrain to 7.5 m and kicking in the boot track…');
   const t0 = performance.now();
-  field.refine([routes.main, routes.lhotse], game.camps);
+  const top = (r, id) => ({ ...r.pts[r.pts.length - 1], e: PEAKS.find((p) => p.id === id).e });
+  field.refine([routes.main, routes.lhotse], game.camps, 1, [top(routes.main, 'everest'), top(routes.lhotse, 'lhotse')]);
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
   await step('Building terrain chunks…');
@@ -98,7 +100,7 @@ function frame(now) {
 // ---------------- debugging / automated tests
 const all = () => [...game.routes.main.pts.filter((_, i) => Object.values(game.routes.main.tags).includes(i)), ...game.routes.lhotse.pts.slice(-1)];
 let dbgIdx = 0;
-function teleport(x, z) { const P = game.P; P.x = x; P.z = z; P.y = game.field.height(x, z); P.falling = null; game.S.maxAlt = Math.max(game.S.maxAlt, P.y); resetHUD(); }
+const teleport = (x, z) => placePlayer(x, z);
 function debugKey(code) {
   if (code === 'KeyT' || code === 'KeyG') {
     const pts = all(); dbgIdx = Math.max(0, Math.min(pts.length - 1, dbgIdx + (code === 'KeyT' ? 1 : -1)));

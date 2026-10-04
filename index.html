@@ -5,13 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Everest – South Col Expedition</title>
 <link rel="stylesheet" href="css/style.css">
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-  }
-}
+<script>
+  // Import map for Three.js r160: the jsDelivr CDN by default, or the copy in node_modules with
+  // ?localthree (offline development: `npm install`, then `npm start`).
+  (function () {
+    var local = new URLSearchParams(location.search).has('localthree');
+    var base = local ? 'node_modules/three/' : 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
+    var map = document.createElement('script');
+    map.type = 'importmap';
+    map.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/' } });
+    document.currentScript.after(map);
+  })();
 </script>
 </head>
 <body>
@@ -87,7 +91,7 @@
       <kbd>Mouse</kbd><span>Look around (click the view to lock the pointer)</span>
       <kbd>Shift</kbd><span>Climb faster (costs stamina, raises O₂ use and breathing load)</span>
       <kbd>E</kbd><span>Enter a camp (rest, oxygen, forecast, save) · clip into, switch or unclip fixed ropes</span>
-      <kbd>F</kbd><span>Follow the marked route up or down (the way you face) with time fast-forwarded ×4</span>
+      <kbd>F</kbd><span>Follow the marked route up or down (the way you face) with time fast-forwarded ×4, stopping at camps · <kbd>Shift</kbd>+<kbd>F</kbd> without stopping</span>
       <kbd>O</kbd><span>Supplemental oxygen on/off &nbsp; <kbd>1</kbd>–<kbd>4</kbd> or <kbd>[</kbd> <kbd>]</kbd> flow rate in L/min</span>
       <kbd>V</kbd><span>Third / first person &nbsp; <kbd>Wheel</kbd> camera distance</span>
       <kbd>M</kbd><span>Enlarge the route map</span>
@@ -99,6 +103,7 @@
       <button id="btnContinue" disabled>Continue saved expedition</button>
       <button id="btnFree">Free viewing — teleport to any camp or summit</button>
     </div>
+    <p id="titleMsg" class="cause" style="font-size:14px" role="status"></p>
     <p class="note" style="margin-top:14px">Elevation data: Copernicus GLO-30 DEM © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018,
       provided under COPERNICUS by the European Union and ESA. Summit elevations corrected to surveyed values.</p>
   </div>
@@ -109,7 +114,7 @@
     <h2>Paused</h2>
     <div class="controls" style="margin-top:10px">
       <kbd>W A S D</kbd><span>Move</span><kbd>Shift</kbd><span>Climb faster</span>
-      <kbd>E</kbd><span>Camps / fixed ropes</span><kbd>F</kbd><span>Follow route (×4)</span><kbd>O</kbd><span>Oxygen on/off</span>
+      <kbd>E</kbd><span>Camps / fixed ropes</span><kbd>F</kbd><span>Follow route (×4) · Shift+F non-stop</span><kbd>O</kbd><span>Oxygen on/off</span>
       <kbd>1–4  [ ]</kbd><span>Oxygen flow rate</span><kbd>V</kbd><span>Camera view</span><kbd>M</kbd><span>Route map</span>
       <kbd>T</kbd><span>Teleport (free viewing)</span>
     </div>

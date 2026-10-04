@@ -117,3 +117,8 @@ table.fc th { color: var(--dim); font-weight: 500; }
 code { font: 12px ui-monospace, monospace; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; }
 .btns.dest { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .btns.dest button { text-align: left; line-height: 1.25; }
+/* modal screens: keep HUD warnings from showing over (or through) the cards */
+body[data-screen]:not([data-screen=""]) #dzBanner, body[data-screen]:not([data-screen=""]) #dzTag,
+body[data-screen]:not([data-screen=""]) #prompt, body[data-screen]:not([data-screen=""]) #hStatus { display: none; }
+body[data-screen="scrDead"] #toasts, body[data-screen="scrWin"] #toasts, body[data-screen="scrTitle"] #toasts,
+body[data-screen="scrPause"] #toasts { display: none; }

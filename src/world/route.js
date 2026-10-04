@@ -2,6 +2,7 @@
 // least-cost pathfinding over the DEM between surveyed waypoints - see tools/build_assets.py).
 import { TERRAIN } from '../config.js';
 import { clamp, lerp } from '../core/math.js';
+import { SegmentIndex } from '../core/spatial.js';
 
 export class Route {
   constructor(name, data) {
@@ -13,6 +14,9 @@ export class Route {
       this.cum.push(this.cum[i - 1] + Math.hypot(this.pts[i].x - this.pts[i - 1].x, this.pts[i].z - this.pts[i - 1].z));
     }
     this.L = this.cum[this.cum.length - 1];
+    const segs = [];
+    for (let i = 0; i < this.pts.length - 1; i++) segs.push({ ax: this.pts[i].x, az: this.pts[i].z, bx: this.pts[i + 1].x, bz: this.pts[i + 1].z, i });
+    this.index = new SegmentIndex(segs, 50);
   }
   s(tag) { return this.cum[this.tags[tag]]; }
   point(tag) { return this.pts[this.tags[tag]]; }
@@ -24,8 +28,16 @@ export class Route {
     const a = this.pts[lo], b = this.pts[hi], seg = this.cum[hi] - this.cum[lo] || 1, t = (s - this.cum[lo]) / seg;
     return { x: lerp(a.x, b.x, t), z: lerp(a.z, b.z, t), dx: (b.x - a.x) / seg, dz: (b.z - a.z) / seg, i: lo };
   }
+  /** nearest point within maxDist metres, or null */
+  nearestWithin(x, z, maxDist) {
+    const h = this.index.nearest(x, z, maxDist);
+    if (!h) return null;
+    const i = this.index.segs[h.k].i;
+    return { d: h.d, s: this.cum[i] + h.t * (this.cum[i + 1] - this.cum[i]), i };
+  }
   /** nearest point on the route (horizontal); hint = previous index for a fast local search */
   nearest(x, z, hint = -1, window = 60) {
+    if (hint < 0) return this.nearestWithin(x, z, Infinity);   // spatial index instead of a full scan
     let best = 1e18, bs = 0, bi = 0;
     const i0 = hint >= 0 ? Math.max(0, hint - window) : 0, i1 = hint >= 0 ? Math.min(this.pts.length - 1, hint + window) : this.pts.length - 1;
     for (let i = i0; i < i1; i++) {
@@ -93,7 +105,8 @@ export function regionName(routes, camps, x, z, y) {
   if (Math.hypot(x - m.pts[m.pts.length - 1].x, z - m.pts[m.pts.length - 1].z) < 15 && y > 8835) return 'Summit of Mount Everest';
   if (Math.hypot(x - l.pts[l.pts.length - 1].x, z - l.pts[l.pts.length - 1].z) < 15 && y > 8500) return 'Summit of Lhotse';
   for (const c of camps) if (Math.hypot(c.x - x, c.z - z) < (c.id === 'ebc' ? 70 : 32)) return c.name;
-  const nm = m.nearest(x, z), nl = l.nearest(x, z);
+  const FAR = { d: Infinity, s: 0 };
+  const nm = m.nearestWithin(x, z, 260) || FAR, nl = l.nearestWithin(x, z, 210) || FAR;
   if (nl.d < nm.d && nl.d < 200 && nl.s > 25) return nl.s > l.s('lhotse_c4') ? 'Lhotse Couloir' : 'Upper Lhotse Face';
   if (nm.d < 250) {
     const s = nm.s;

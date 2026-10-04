@@ -7,12 +7,16 @@ import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, re
   destinations, teleportTo, enterFreeViewing, setHour, setClearWeather } from '../sim/game.js';
 import { nearestRope, clipTo } from '../sim/player.js';
 import { resetHUD } from './hud.js';
+import { isEmptyBottle } from '../sim/physiology.js';
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrLoading'];
 let canvas, currentCamp = null, pausedAt = 0, expectUnlock = false;
 
-function show(id) { for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id); }
+function show(id) {
+  for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
+  document.body.dataset.screen = id || '';        // CSS hides HUD warnings under modal screens
+}
 
 export function initScreens(glCanvas) {
   canvas = glCanvas;
@@ -22,7 +26,13 @@ export function initScreens(glCanvas) {
     toast('Free viewing: pick a camp or summit to teleport to. Press T at any time to open this panel again.', 'info', 7);
     openTravel();
   };
-  $('btnContinue').onclick = () => { emit('userGesture'); if (load()) { resetHUD(); toast('Expedition loaded.', 'good'); resumePlay(); } };
+  $('btnContinue').onclick = () => {
+    emit('userGesture');
+    if (load()) { resetHUD(); toast('Expedition loaded.', 'good'); resumePlay(); return; }
+    // the HUD (and its toasts) is hidden on the title screen, so explain here
+    $('titleMsg').textContent = 'The saved expedition could not be read and has been discarded. Start a new expedition.';
+    $('btnContinue').disabled = !hasSave();
+  };
   $('btnResume').onclick = () => resumePlay();
   $('btnLoadSave').onclick = () => { if (load()) { resetHUD(); toast('Loaded last save.', 'good'); resumePlay(); } };
   $('btnQuit').onclick = () => showTitle();
@@ -54,6 +64,7 @@ export function showTitle() {
   game.mode = 'title';
   $('hud').classList.add('hidden');
   $('btnContinue').disabled = !hasSave();
+  $('titleMsg').textContent = '';
   show('scrTitle');
 }
 export function resumePlay() {
@@ -162,7 +173,7 @@ function renderCamp() {
       <button data-act="take" ${S.stock[c.id] > 0 && S.tanks.length < OXYGEN.maxCarried ? '' : 'disabled'}>Take a full bottle</button>
       <button data-act="leave" ${S.tanks.some((p) => p > full - 10) ? '' : 'disabled'}>Cache a full bottle here</button>
       <button data-act="swap" ${S.tanks.length > 1 || (S.tanks.length && S.tanks[0] < full - 10 && S.stock[c.id] > 0) ? '' : 'disabled'}>Swap to fullest bottle</button>
-      <button data-act="dump" ${S.tanks.some((p) => p < 20) ? '' : 'disabled'}>Drop empty bottles</button>
+      <button data-act="dump" ${S.tanks.some(isEmptyBottle) ? '' : 'disabled'}>Drop empty bottles</button>
       <button data-act="o2">${S.o2on ? 'Turn oxygen off' : 'Turn oxygen on'}</button>
     </div>
     <p class="note">Carry at most ${OXYGEN.maxCarried} bottles. A full 4 L bottle (300 bar) weighs 3.6 kg and lasts ~10 h at 2 L/min, ~5 h at 4 L/min.</p>

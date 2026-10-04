@@ -3,8 +3,9 @@ import { START_TIME_H, OXYGEN, DEATH_ZONE } from '../config.js';
 import { emit, toast } from '../core/events.js';
 import { fmt, timeOfDay, dayOf } from '../core/math.js';
 import { Weather } from './weather.js';
-import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank } from './physiology.js';
+import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyBottle } from './physiology.js';
 import { LANDMARKS, regionName } from '../world/route.js';
+import { PEAKS } from '../world/geo.js';
 
 const SAVE_KEY = 'everestSim.v2.save';
 
@@ -27,7 +28,7 @@ export function newGame(seed, { free = false } = {}) {
     seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
     o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
     summits: { everest: false, lhotse: false }, summitTimes: {}, summitNoO2: {},
-    usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(g.camps.map((c) => [c.id, c.stock === Infinity ? 99 : c.stock])),
+    usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(g.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
     visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false,
   };
   g.time = START_TIME_H;
@@ -81,11 +82,13 @@ export function checkProgress() {
   const ev = routes.main.pts[routes.main.pts.length - 1], lh = routes.lhotse.pts[routes.lhotse.pts.length - 1];
   if (!S.summits.everest && Math.hypot(P.x - ev.x, P.z - ev.z) < 10 && P.y > 8835) {
     S.summits.everest = true; S.summitTimes.everest = game.time; S.summitNoO2.everest = !S.usedO2InDZ;
+    S.maxAlt = Math.max(S.maxAlt, PEAKS.find((k) => k.id === 'everest').e);   // you stood on the surveyed summit
     toast('SUMMIT! You are standing on top of the world — Mount Everest, 8,849 m. Now get down alive.', 'good', 10);
     emit('summit', 'everest');
   }
   if (!S.summits.lhotse && Math.hypot(P.x - lh.x, P.z - lh.z) < 10 && P.y > 8500) {
     S.summits.lhotse = true; S.summitTimes.lhotse = game.time; S.summitNoO2.lhotse = !S.usedO2InDZ;
+    S.maxAlt = Math.max(S.maxAlt, PEAKS.find((k) => k.id === 'lhotse').e);
     toast('SUMMIT! Lhotse, 8,516 m — the fourth-highest mountain on Earth. Now descend to Camp 2.', 'good', 10);
     emit('summit', 'lhotse');
   }
@@ -138,7 +141,7 @@ export function campAction(act, camp) {
       S.tanks[0] = full; S.stock[camp.id]--; toast('Fitted a fresh bottle from the camp stock.', 'good');
     } else { S.tanks.sort((a, b) => b - a); toast('Regulator moved to the fullest bottle.'); }
   }
-  if (act === 'dump') S.tanks = S.tanks.filter((p) => p >= 20);
+  if (act === 'dump') S.tanks = S.tanks.filter((p) => !isEmptyBottle(p));
 }
 
 export function toggleO2() {
@@ -165,17 +168,40 @@ export function save(silent) {
   try { localStorage.setItem(SAVE_KEY, lastSave); } catch { /* private mode: keep the in-memory copy */ }
   if (!silent) toast('Progress saved.', 'good');
 }
+function parseSave(raw) {
+  try {
+    const d = JSON.parse(raw);
+    const ok = d && d.v === 2 && d.S && typeof d.S === 'object' && Array.isArray(d.S.tanks) && d.S.stock && d.S.summits &&
+      d.P && Number.isFinite(d.P.x) && Number.isFinite(d.P.z) && Number.isFinite(d.time);
+    return ok ? d : null;
+  } catch { return null; }
+}
+/** The stored save, else this session's in-memory copy. Unreadable saves are discarded, never thrown. */
+function readSave() {
+  let stored = null;
+  try { stored = localStorage.getItem(SAVE_KEY); } catch { /* storage blocked */ }
+  if (stored) {
+    const d = parseSave(stored);
+    if (d) return d;
+    // a corrupt or incompatible save must not brick "Continue": discard it and say so
+    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
+    toast('The saved expedition was unreadable and has been discarded.', 'bad', 7);
+  }
+  if (lastSave) {
+    const d = parseSave(lastSave);
+    if (d) return d;
+    lastSave = null;
+  }
+  return null;
+}
 export function hasSave() {
-  try { if (localStorage.getItem(SAVE_KEY)) return true; } catch { /* ignore */ }
-  return !!lastSave;
+  try { const s = localStorage.getItem(SAVE_KEY); if (s && parseSave(s)) return true; } catch { /* ignore */ }
+  return !!lastSave && !!parseSave(lastSave);
 }
 export function load() {
-  let raw = null;
-  try { raw = localStorage.getItem(SAVE_KEY); } catch { /* ignore */ }
-  raw = raw || lastSave;
-  if (!raw) return false;
-  const d = JSON.parse(raw);
-  game.S = d.S; game.S.stock.ebc = 99;
+  const d = readSave();
+  if (!d) return false;
+  game.S = d.S; game.S.stock.ebc = Infinity;       // JSON stores Infinity as null
   Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1 });
   game.P.y = game.field.height(game.P.x, game.P.z);
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
@@ -205,8 +231,9 @@ export function destinations() {
     ['lhotse', 'Summit of Lhotse', l, l.L - 7, 1],
   ];
   return list.map(([id, name, route, s, dir]) => {
-    const summit = id === 'everest' || id === 'lhotse', p = route.at(summit ? route.L : s);   // summits show the top's height
-    return { id, name, route, s, dir, elevation: game.field.height(p.x, p.z), summit };
+    const summit = id === 'everest' || id === 'lhotse', p = route.at(s);
+    const elevation = summit ? PEAKS.find((k) => k.id === id).e : game.field.height(p.x, p.z);   // summits: surveyed height
+    return { id, name, route, s, dir, elevation, summit };
   });
 }
 
@@ -216,16 +243,23 @@ export function enterFreeViewing() {
   toast('Free viewing: teleport anywhere with T, survival systems are off. Your saved expedition is kept.', 'info', 7);
 }
 
+/** Move the climber somewhere new, clearing everything tied to the old position (rope, autopilot, fall). */
+export function placePlayer(x, z, yaw) {
+  const { P, view } = game;
+  Object.assign(P, { x, z, falling: null, clipped: -1, ropeHint: -1, onLadder: false, routeHint: -1, moving: false });
+  P.y = game.field.height(x, z);
+  if (yaw !== undefined) { view.yaw = yaw; P.facing = yaw; }
+  game.auto = null;
+  refreshConditions();
+  emit('teleported');
+}
+
 export function teleportTo(id) {
   const d = destinations().find((x) => x.id === id);
   if (!d) return false;
-  const { P, view } = game, p = d.route.at(d.s), q = d.route.at(d.s + d.dir * 25);
-  Object.assign(P, { x: p.x, z: p.z, falling: null, clipped: -1, onLadder: false, routeHint: -1, moving: false });
-  P.y = game.field.height(P.x, P.z);
-  view.yaw = Math.atan2(-(q.x - p.x), -(q.z - p.z)); P.facing = view.yaw; view.pitch = d.summit ? 0.08 : 0.02;
-  game.auto = null;
-  refreshConditions();
-  emit('teleported', d);
+  const p = d.route.at(d.s), q = d.route.at(d.s + d.dir * 25);
+  placePlayer(p.x, p.z, Math.atan2(-(q.x - p.x), -(q.z - p.z)));
+  game.view.pitch = d.summit ? 0.08 : 0.02;
   toast(`${d.name} — ${fmt(d.elevation)} m`, 'good', 3);
   return true;
 }
