@@ -1,0 +1,2 @@
+[{"script":"tests/graphics.js","expect":"r.presets.low.active === 'low' && r.presets.low.button && !r.presets.low.post && r.presets.high.post && r.presets.high.ssao && r.presets.high.bloom && r.presets.high.shadowMap === 4096 && r.presets.medium.post && r.presets.medium.ssao && r.presets.medium.bloom && r.presets.medium.shadowMap === 2048 && r.remembered === 'medium' && !r.o2Off.bottle && !r.o2Off.mask && r.o2On.bottle && r.o2On.mask && r.macro.lit && r.macro.dark && r.hud.length > 0 && r.mode === 'play'"},
+ {"wait":3000},{"shot":"graphics_medium.png"}]

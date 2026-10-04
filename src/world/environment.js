@@ -8,6 +8,7 @@ import { sunDirection } from '../sim/weather.js';
 import { setupLighting } from '../render/lighting.js';
 import { MistLayers, WindSnow } from '../render/atmosphere.js';
 import { SHARED } from '../render/shared.js';
+import { on } from '../core/events.js';
 
 export class Environment {
   /** opts: { quality (preset), field (core height field), macroShadow (MacroShadow|null) } */
@@ -31,9 +32,10 @@ export class Environment {
     this.mist = new MistLayers(scene, opts.field);
     this.snow = new WindSnow(scene, opts.quality.snowParticles);
     this.macro = opts.macroShadow || null;
-    this.sunVec = new THREE.Vector3(); this.lastTime = null;
+    this.sunVec = new THREE.Vector3(); this.lastTime = null; this.adapt = 1;
     this.colors = { day: new THREE.Color(0xb9cbe0), night: new THREE.Color(0x070b14), storm: new THREE.Color(0xa7adb5), dusk: new THREE.Color(0xd9a27a) };
     this.applyQuality(opts.quality);
+    on('teleported', () => { this.snapAdapt = true; });   // a new place: no slow adaptation from the old one
   }
 
   applyQuality(q) {
@@ -69,7 +71,7 @@ export class Environment {
     this.sun.intensity = 3.3 * smoothstep(-0.02, 0.15, el) * cloud;
     this.sun.color.setRGB(1, lerp(0.62, 0.97, smoothstep(0, 0.4, el)), lerp(0.42, 0.92, smoothstep(0, 0.4, el)));
     this.lights.follow(P, this.sunVec);
-    this.hemi.intensity = 0.12 + 0.75 * day;
+    this.hemi.intensity = 0.12 + 1.15 * day;      // thin, clear air: strong blue skylight fills the shadows
     this.hemi.color.setRGB(lerp(0.25, 0.74, day), lerp(0.3, 0.83, day), lerp(0.5, 1.0, day));
     this.moon.intensity = 0.35 * (1 - day) * (1 - w.S * 0.8);
     // headlamp after dark
@@ -93,7 +95,11 @@ export class Environment {
     const fc = this.scene.fog.color, C = this.colors;
     fc.copy(C.night).lerp(C.day, day).lerp(C.dusk, dusk * 0.5 * (1 - w.S)).lerp(C.storm.clone().multiplyScalar(0.15 + 0.85 * day), smoothstep(0.25, 0.8, w.S));
     this.renderer.setClearColor(fc);
-    this.renderer.toneMappingExposure = lerp(0.95, 0.6, day);
+    // eye adaptation: standing in a mountain's shadow, exposure opens up over a couple of seconds
+    const lit = this.macro ? this.macro.sample(P.x, P.z) : 1;
+    this.adapt = this.snapAdapt ? lit : this.adapt + (lit - this.adapt) * Math.min(1, dt * 0.8);
+    this.snapAdapt = false;
+    this.renderer.toneMappingExposure = lerp(0.95, lerp(1.05, 0.6, this.adapt), day);
     this.mist.update(dt, camera.position, w, day, ctx.env.wind, w.dir, fc, this.sun.color);
     const spindrift = smoothstep(55, 110, ctx.env.wind) * (P.y > 7000 ? 0.6 : 0.2);
     this.snow.update(dt, camera.position, clamp(smoothstep(0.25, 0.8, w.S) + spindrift, 0, 1), ctx.env.wind, w.dir, day);

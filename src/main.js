@@ -80,7 +80,7 @@ async function boot() {
   await step('Building terrain chunks…');
   terrainMat = createTerrainMaterial({
     layers, macroNoise: createMacroNoiseTexture(), relief: relief.texture, reliefRect: relief.rect,
-    microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512,
+    microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512, exactGradients: quality.exactGradients,
   });
   terrain = new TerrainLOD(scene, terrainMat, field, coreTerrainOptions());
   backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
@@ -154,7 +154,7 @@ function setQuality(name) {
   resize();
   env.applyQuality(q);
   postfx.configure(q);
-  const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512 };
+  const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
   if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
     relief = createReliefTexture(game.field, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
@@ -167,7 +167,7 @@ on('setQuality', setQuality);
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
-  get quality() { return qualityName; }, get postfx() { return postfx; },
+  get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

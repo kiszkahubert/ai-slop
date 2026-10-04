@@ -56,7 +56,7 @@ export const VISUALS = {
     normalStrength: 1.0,      // layer normal-map strength
     microNormalStrength: 0.6, // close-up micro-normal strength (fades out by ~120 m)
     reliefNormalFade: [260, 900],   // m: blend from mesh normals to the Sobel relief normal map
-    aoStrength: 0.85,         // baked terrain (horizon) ambient occlusion
+    aoStrength: 0.6,          // baked terrain (horizon) ambient occlusion
     snowSparkle: 1.0,         // sun glints on snow
     snowSubsurface: 1.0,      // blue-tinted brightening of snow in shadow
     sastrugiAngleDeg: 300,    // direction of the prevailing wind that carves the snow ripples (from WNW)

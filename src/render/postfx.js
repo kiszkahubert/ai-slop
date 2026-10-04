@@ -111,7 +111,7 @@ export class PostFX {
   configure(q) {
     this.q = q;
     for (const t of this.targets) t.dispose();
-    this.targets = [];
+    this.targets = []; this.sceneRT = this.hdrA = this.hdrB = this.aoRT = this.aoBlurRT = null;
     if (this.bloom) { this.bloom.dispose(); this.bloom = null; }
     if (!q.post) return;
     const needDepth = q.ssao || q.dof;

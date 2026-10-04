@@ -131,7 +131,7 @@ function snowLayer(S, rand) {
     h, cav,
     col: (i) => { const c = 0.965 + 0.035 * grain[i] - 0.03 * (cav[i] - h[i] > 0 ? 1 : 0); return [236 * c, 241 * c, 250 * c]; },
     rough: (i) => 0.78 - 0.18 * smooth(0.5, 0.9, h[i]),            // crests are wind-polished
-    normalStrength: 2.2,
+    normalStrength: 1.3,
   };
 }
 

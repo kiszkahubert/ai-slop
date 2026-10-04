@@ -107,6 +107,55 @@ death marked, an oxygen strip along the bottom and a hover tooltip for any momen
 - a decision-by-decision journal of camps, rests, oxygen changes, bottle swaps and slips;
 - the key numbers of the expedition and its score.
 
+## Graphics
+
+Choose **Low**, **Medium** or **High** under *Graphics* on the title or pause screen (or add `?quality=low|medium|high` to
+the URL). The choice applies immediately, is remembered by the browser, and never touches the simulation: the HUD,
+oxygen, route map, compass, camera and controls behave exactly the same at every setting.
+
+| | Low | Medium | High |
+|---|---|---|---|
+| Terrain textures | 256 px | 512 px, anti-tiling, micro detail | 1024 px, exact gradients (hardware anisotropic filtering) |
+| Relief normals / terrain AO | 32 m / 64 m | 16 m / 32 m | 8 m / 16 m |
+| Mountain shadows | off | on | on |
+| Sun shadow map | 1024², ±40 m | 2048², ±55 m | 4096², ±70 m |
+| Post-processing | none (direct ACES) | bloom, vignette, MSAA | + SSAO, + depth of field in free viewing |
+| Mist layers, snow particles | off, 1,500 | on, 3,500 | on, 6,000 |
+
+What the renderer does:
+- **Terrain**: four procedural layers (dark layered rock, snow with wind-carved sastrugi, ice/firn, moraine gravel),
+  each with albedo, normal, roughness and AO, generated at load (no texture files). They are sampled with triplanar
+  mapping, so steep faces don't stretch, and blended by altitude, slope and the glacier/rock masks. Every layer is
+  sampled at two scales mixed by low-frequency noise (no visible tiling), with micro normals up close. A Sobel normal
+  map and horizon AO baked from the elevation model keep distant relief crisp. Snow glints in the sun and glows
+  faintly blue in shadow.
+- **Light**: the mountains cast real shadows on each other (ray-marched toward the sun a few rows per frame), the
+  sun's shadow map is snapped to its texel grid so near shadows stay sharp and never shimmer, and exposure adapts
+  when you stand in shadow.
+- **Atmosphere**: fog depends on distance *and* altitude, so valleys are hazier than summits and far ranges turn
+  blue. Horizontal visibility still matches the HUD. Valley mist banks drift with the wind, and wind-blown snow and
+  spindrift streaks scale with the wind shown on the HUD.
+- **Climber**: built from rounded shapes on a joint hierarchy: quilted red down suit, harness with carabiners and
+  the rope tied in, crampons on tall boots, a pack with the oxygen cylinder, regulator, hose and mask (shown while
+  oxygen is on), mirrored goggles, a helmet with the logo decal, and a real ice axe. Animations: walking, a cane axe
+  on easy ground, planting it on steep ground, careful steps on ladders, breathing that quickens with hypoxia,
+  falls and the skiing stance.
+
+**The helmet logo** is the decal texture `assets/redbull-logo.png` (path: `VISUALS.helmetLogoUrl` in
+`src/config.js`). The file in the repo is a neutral "LOGO" stand-in; replace it with your transparent PNG
+(about 2:1). If the file is missing, a drawn placeholder is used.
+
+**Tuning** (`VISUALS` in `src/config.js`, no effect on gameplay):
+- `terrain.textureTileM` / `microTileM`: texture scale in metres; `normalStrength`, `microNormalStrength`: bumpiness;
+  `reliefNormalFade`: where the baked relief normals take over; `aoStrength`; `snowSparkle`; `snowSubsurface`;
+  `sastrugiAngleDeg`: prevailing wind that carves the snow.
+- `fog.heightFalloff`: how fast haze thins with altitude (0 = plain distance fog); `fog.aerialTint`, `aerialStrength`:
+  the blue of distant ranges.
+- `post.bloomStrength`, `bloomRadius`, `bloomThreshold`, `vignette`, `aoRadius`, `aoIntensity`, `aoMaxDistance`,
+  `dofFocusRange`, `dofMaxBlur`.
+- `mist.opacity`, `mist.altitudes`.
+- The presets themselves are in `src/render/quality.js`.
+
 ## Run
 
 ES modules and the terrain files must be served over HTTP. Opening `index.html` from disk will not work.
@@ -152,10 +201,11 @@ src/
     heightfield.js    loads the native 4 m terrain, levels the boot track and camp terraces,
                       preserves the measured surface for face slopes, adds rock shading masks
     terrain.js        chunked LOD terrain with skirts (core + backdrop)
-    terrainMaterial.js  snow / blue ice / rock / Yellow Band / debris shading, detail normals, Earth curvature
+    terrainMaterial.js  triplanar rock / snow / ice / moraine layers, Yellow Band, relief normals, snow sparkle,
+                      mountain shadows, Earth curvature
     route.js          route model, camps, fixed ropes, landmarks, region names
     props.js          tents, wands, ropes, ladders & crevasses, seracs, Hillary Step, cornice, flags
-    environment.js    sky, sun path, stars, headlamp, fog, snow
+    environment.js    sky, sun path, stars, headlamp, fog, valley mist, wind-blown snow, eye adaptation
   sim/
     game.js           game state, progress, camps, save/load
     physiology.js     SpO₂, acclimatization, death zone, oxygen, frostbite, exhaustion
@@ -163,13 +213,25 @@ src/
     weather.js        jet stream, storms, summit windows, wind / temperature / visibility
     step.js           one simulation tick (also used by the tests)
     debrief.js        expedition telemetry and the end-of-climb analysis / verdicts
-  render/             climber model, camera rig
+  render/
+    climber.js        the climber: rounded-shape rig, down suit, harness, pack, oxygen set, animation
+    helmet.js         helmet shell, vents, chin strap and the logo decals
+    iceAxe.js         ice axe: curved shaft, toothed pick, adze, spike, grip, leash
+    camera.js         third / first person camera rig
+    quality.js        Low / Medium / High presets
+    proceduralTextures.js  generated terrain layers (albedo, normal, roughness, AO), jacket quilting, logo stand-in
+    terrainMaps.js    relief normals + horizon AO from the elevation model; the mountains' sun shadows
+    lighting.js       sun with stable soft shadows, sky light, moon, headlamp
+    atmosphere.js     height + distance fog with aerial perspective, mist layers, snow particles
+    postfx.js         SSAO, depth of field, bloom, vignette, ACES tone mapping and sRGB output
+    shared.js         uniforms shared by all materials; the mountain-shadow material patch
   ui/                 HUD, route map, screens (title / pause / camp / death / win), toasts
     debrief.js        debrief screen: altitude / SpO₂ / oxygen chart, journal and stats
 assets/
   terrain/core.png, backdrop.png, meta.json   heights as RGB (h = (R·256 + G) / 4 m), B = glacier mask
   route.json                                  generated route paths and waypoint tags
   ai-slop-badge.png                           badge above, vibecoded like the rest of it
+  redbull-logo.png                            helmet logo decal (a "LOGO" stand-in: replace with your own PNG)
 tools/                Pléiades asset pipeline (Python), frozen Copernicus fallback, interpreter picker
 tests/                Playwright harness + gameplay tests; tests/unit/ node:test suites
 ```

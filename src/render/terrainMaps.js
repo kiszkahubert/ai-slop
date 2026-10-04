@@ -97,6 +97,12 @@ export class MacroShadow {
       this.done.copy(this.sun); this.row = -1;
     }
   }
+  /** Sunlit fraction (0..1) at a world position, from the last finished pass. */
+  sample(x, z) {
+    const d = this.k * this.f.cell, i = Math.round((x - this.f.x0) / d), j = Math.round((z - this.f.z0) / d);
+    if (!this.enabled || i < 0 || j < 0 || i >= this.n || j >= this.m) return 1;
+    return this.texture.image.data[j * this.n + i] / 255;
+  }
   /** Finish the current pass at once (after a teleport or a jump in time). */
   flush(sunDir) { this.done.set(0, -1, 0); this.row = -1; do this.update(sunDir, this.m); while (this.row >= 0); }
 }

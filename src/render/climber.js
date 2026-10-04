@@ -183,6 +183,7 @@ export function createClimber(scene, { renderer = null } = {}) {
   const reflective = [M.metal, M.bottle, M.lens, ...axe.userData.metals];
   return {
     group: root,
+    parts: { o2, mask, axe, skis, helmet },
     /** day: 0 at night, 1 in daylight (dims reflections of the static environment map) */
     setDaylight(day) { for (const m of reflective) m.envMapIntensity = 0.12 + 0.88 * day; },
     update(dt, P, S = null) {

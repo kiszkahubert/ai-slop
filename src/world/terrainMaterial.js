@@ -15,8 +15,8 @@ import { D2R } from '../core/math.js';
 import { SHARED, MACRO_SHADOW_PARS, injectSunShadow } from '../render/shared.js';
 
 /**
- * opts: { layers: {albedo, surface} texture arrays, macroNoise, relief (texture|null), reliefRect (Vector4),
- *         microDetail (bool), antiTiling (bool) }
+ * opts: { layers: {albedo, surface, size} texture arrays, macroNoise, relief (texture|null), reliefRect (Vector4),
+ *         microDetail (bool), antiTiling (bool), exactGradients (bool: textureGrad + hardware anisotropy) }
  */
 export function createTerrainMaterial(opts) {
   const V = VISUALS.terrain, a = V.sastrugiAngleDeg * D2R;
@@ -24,6 +24,7 @@ export function createTerrainMaterial(opts) {
     uCurv: { value: 1 / (2 * TERRAIN.earthRadius) },
     uAlbedo: { value: opts.layers.albedo },
     uSurface: { value: opts.layers.surface },
+    uTexSize: { value: opts.layers.size },
     uMacro: { value: opts.macroNoise },
     uRelief: { value: opts.relief },
     uReliefRect: { value: opts.relief ? opts.reliefRect : new THREE.Vector4(0, 0, 0, 0) },
@@ -33,7 +34,7 @@ export function createTerrainMaterial(opts) {
     uSastrugiCS: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.86, metalness: 0 });
-  mat.defines = { TERRAIN_ANTI_TILING: opts.antiTiling ? 1 : 0, TERRAIN_MICRO: opts.microDetail ? 1 : 0 };
+  mat.defines = { TERRAIN_ANTI_TILING: opts.antiTiling ? 1 : 0, TERRAIN_MICRO: opts.microDetail ? 1 : 0, TERRAIN_GRAD: opts.exactGradients ? 1 : 0 };
   mat.userData.uniforms = uniforms;
   mat.userData.macroPatched = true;           // has its own mountain-shadow code (see patchMacroShadow)
   mat.onBeforeCompile = (sh) => {
@@ -56,7 +57,7 @@ export function createTerrainMaterial(opts) {
           float occ = mix( 1.0, tAO, uSnowFx.w );
           reflectedLight.indirectDiffuse *= occ; reflectedLight.indirectSpecular *= occ;
           // snow scatters light under its surface: shadowed snow glows faintly blue instead of going grey
-          reflectedLight.indirectDiffuse += tSnow * uSnowFx.y * vec3( 0.30, 0.48, 0.85 ) * uSkyAmbient * diffuseColor.rgb * 0.45 * occ;
+          reflectedLight.indirectDiffuse += tSnow * uSnowFx.y * vec3( 0.30, 0.48, 0.85 ) * uSkyAmbient * diffuseColor.rgb * 0.9 * occ;
         }`)
       .replace('#include <opaque_fragment>', `
         {
@@ -71,7 +72,7 @@ export function createTerrainMaterial(opts) {
         }
         #include <opaque_fragment>`);
   };
-  mat.customProgramCacheKey = () => `terrain-${mat.defines.TERRAIN_ANTI_TILING}-${mat.defines.TERRAIN_MICRO}`;
+  mat.customProgramCacheKey = () => `terrain-${mat.defines.TERRAIN_ANTI_TILING}-${mat.defines.TERRAIN_MICRO}-${mat.defines.TERRAIN_GRAD}`;
   return mat;
 }
 
@@ -83,8 +84,10 @@ export function updateTerrainMaterial(mat, opts) {
     if (u.uRelief.value && u.uRelief.value !== opts.relief) u.uRelief.value.dispose();
     u.uRelief.value = opts.relief; u.uReliefRect.value = opts.relief ? opts.reliefRect : new THREE.Vector4(0, 0, 0, 0);
   }
+  if (opts.layers) u.uTexSize.value = opts.layers.size;
   u.uTile.value.w = opts.microDetail ? V.microNormalStrength : 0;
   mat.defines.TERRAIN_ANTI_TILING = opts.antiTiling ? 1 : 0; mat.defines.TERRAIN_MICRO = opts.microDetail ? 1 : 0;
+  mat.defines.TERRAIN_GRAD = opts.exactGradients ? 1 : 0;
   mat.needsUpdate = true;
 }
 
@@ -107,6 +110,19 @@ varying vec3 vWPos;
 varying vec3 vWNrm;
 vec3 tNrm; float tRough; float tAO; float tSnow;
 
+uniform float uTexSize;
+// High: exact gradients (hardware anisotropic filtering). Low/Medium: an explicit mip level that keeps up to 2x
+// more detail along the stretched axis at grazing angles (an approximation of anisotropic filtering that is much
+// cheaper on weak or software GPUs).
+float lodOf( vec2 gx, vec2 gy ) {
+  float a = length( gx ) * uTexSize, b = length( gy ) * uTexSize;
+  return log2( max( max( a, b ) * 0.5, min( a, b ) ) );
+}
+#if TERRAIN_GRAD
+  #define TSAMPLE( T, uv, L, gx, gy ) textureGrad( T, vec3( uv, L ), gx, gy )
+#else
+  #define TSAMPLE( T, uv, L, gx, gy ) textureLod( T, vec3( uv, L ), lodOf( gx, gy ) )
+#endif
 mat2 sastrugi() { return mat2( uSastrugiCS.x, uSastrugiCS.y, -uSastrugiCS.y, uSastrugiCS.x ); }
 
 // one layer, triplanar, at one scale: albedo (rgb) + height (a) / normal (whiteout, world space), roughness, AO.
@@ -115,27 +131,27 @@ mat2 sastrugi() { return mat2( uSastrugiCS.x, uSastrugiCS.y, -uSastrugiCS.y, uSa
 void triLayer( float L, vec3 p, vec3 n, vec3 bw, float s, float strength, vec3 dx, vec3 dy,
                inout vec3 alb, inout vec3 nrm, inout float rough, inout float ao, float w ) {
   vec3 a = vec3( 0.0 ), nn = vec3( 0.0 ); float r = 0.0, o = 0.0;
-  if ( bw.x > 0.02 ) {
+  if ( bw.x > 0.0 ) {
     vec2 uv = p.zy * s, gx = dx.zy * s, gy = dy.zy * s;
-    vec4 A = textureGrad( uAlbedo, vec3( uv, L ), gx, gy ), B = textureGrad( uSurface, vec3( uv, L ), gx, gy );
+    vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
     nn += vec3( t + n.zy, abs( n.x ) ).zyx * bw.x; a += A.rgb * bw.x; r += B.z * bw.x; o += B.w * bw.x;
   }
-  if ( bw.y > 0.02 ) {
+  if ( bw.y > 0.0 ) {
     vec2 uv = p.xz * s, gx = dx.xz * s, gy = dy.xz * s;
     if ( L == 1.0 ) { mat2 R = sastrugi(); uv = R * uv; gx = R * gx; gy = R * gy; }   // snow ripples lie across the prevailing wind
-    vec4 A = textureGrad( uAlbedo, vec3( uv, L ), gx, gy ), B = textureGrad( uSurface, vec3( uv, L ), gx, gy );
+    vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
     if ( L == 1.0 ) t = t * sastrugi();
     nn += vec3( t + n.xz, abs( n.y ) ).xzy * bw.y; a += A.rgb * bw.y; r += B.z * bw.y; o += B.w * bw.y;
   }
-  if ( bw.z > 0.02 ) {
+  if ( bw.z > 0.0 ) {
     vec2 uv = p.xy * s, gx = dx.xy * s, gy = dy.xy * s;
-    vec4 A = textureGrad( uAlbedo, vec3( uv, L ), gx, gy ), B = textureGrad( uSurface, vec3( uv, L ), gx, gy );
+    vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
     nn += vec3( t + n.xy, abs( n.z ) ) * bw.z; a += A.rgb * bw.z; r += B.z * bw.z; o += B.w * bw.z;
   }
-  float bs = bw.x * step( 0.02, bw.x ) + bw.y * step( 0.02, bw.y ) + bw.z * step( 0.02, bw.z );
+  float bs = bw.x + bw.y + bw.z;
   alb += a / bs * w; nrm += nn / bs * w; rough += r / bs * w; ao += o / bs * w;
 }
 
@@ -178,6 +194,8 @@ const FRAG_COLOR = `
   float hgt = vWPos.y;
   vec3 bw = pow( abs( nrm ), vec3( 6.0 ) ); bw /= ( bw.x + bw.y + bw.z );
   vec3 q = vWPos;
+  // projections that would contribute little are faded out smoothly (no seams), saving their texture fetches
+  vec3 bwT = max( bw - 0.06, 0.0 ); bwT /= ( bwT.x + bwT.y + bwT.z );
   #define TRI(S) ( texture2D( uMacro, q.zy * (S) ) * bw.x + texture2D( uMacro, q.xz * (S) ) * bw.y + texture2D( uMacro, q.xy * (S) ) * bw.z )
   float n1 = TRI( 0.0011 ).r;
   float n2 = TRI( 0.0093 ).g;
@@ -206,12 +224,12 @@ const FRAG_COLOR = `
   vec3 alb = vec3( 0.0 ), nacc = vec3( 0.0 ); float rough = 0.0, ao = 0.0;
   float mixN = smoothstep( 0.3, 0.7, n2 );
   // wind carves sastrugi only in places: elsewhere the snow is smooth
-  float carve = mix( 0.25, 1.0, smoothstep( 0.35, 0.75, n2 * 0.7 + n3 * 0.5 ) );
+  float carve = mix( 0.25, 1.0, smoothstep( 0.35, 0.75, n2 * 0.7 + n3 * 0.5 ) ) * ( 1.0 - 0.75 * smoothstep( 0.08, 0.25, slope ) );
   vec3 dpx = dFdx( q ), dpy = dFdy( q );
-  layer( 0.0, q, nrm, bw, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wR );
-  layer( 1.0, q, nrm, bw, mixN, camD, carve, dpx, dpy, alb, nacc, rough, ao, wS );
-  layer( 2.0, q, nrm, bw, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wI );
-  layer( 3.0, q, nrm, bw, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wM );
+  layer( 0.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wR );
+  layer( 1.0, q, nrm, bwT, mixN, camD, carve, dpx, dpy, alb, nacc, rough, ao, wS );
+  layer( 2.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wI );
+  layer( 3.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wM );
   // texture detail fades into the macro colour far away (the mip chain averages it anyway)
   float far = smoothstep( 2500.0, 9000.0, camD );
   tNrm = normalize( mix( nacc, nrm, far * 0.6 ) );
