@@ -10,7 +10,8 @@ import { buildProps } from './world/props.js';
 import { Environment } from './world/environment.js';
 import { makeClimber } from './render/climber.js';
 import { CameraRig } from './render/camera.js';
-import { game, newGame, restHours, placePlayer } from './sim/game.js';
+import { game, newGame, restHours, placePlayer, setSpeedMul } from './sim/game.js';
+import { toggleSkis } from './sim/ski.js';
 import { simStep } from './sim/step.js';
 import { stepPhysiology } from './sim/physiology.js';
 import { startAutopilot, interact, nearestRope } from './sim/player.js';
@@ -22,6 +23,7 @@ import { initScreens, showTitle } from './ui/screens.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
+game.debug = DEBUG;
 const canvas = document.getElementById('gl');
 const loadMsg = document.getElementById('loadMsg');
 const step = (t) => new Promise((r) => { loadMsg.textContent = t; setTimeout(r, 20); });
@@ -102,7 +104,12 @@ function frame(now) {
 const all = () => [...game.routes.main.pts.filter((_, i) => Object.values(game.routes.main.tags).includes(i)), ...game.routes.lhotse.pts.slice(-1)];
 let dbgIdx = 0;
 const teleport = (x, z) => placePlayer(x, z);
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 function debugKey(code) {
+  if (code === 'Comma' || code === 'Period') {       // walk speed
+    const i = SPEEDS.findIndex((v) => v >= game.speedMul);
+    setSpeedMul(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? SPEEDS.length - 1 : i) + (code === 'Period' ? 1 : -1)))]);
+  }
   if (code === 'KeyT' || code === 'KeyG') {
     const pts = all(); dbgIdx = Math.max(0, Math.min(pts.length - 1, dbgIdx + (code === 'KeyT' ? 1 : -1)));
     teleport(pts[dbgIdx].x, pts[dbgIdx].z);
@@ -110,7 +117,7 @@ function debugKey(code) {
   if (code === 'KeyK') { game.time += 1; stepPhysiology(game, 1, { moving: false, sprint: false, grade: 0 }); }
 }
 const api = {
-  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope,
+  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul,
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

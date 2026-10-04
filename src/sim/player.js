@@ -5,7 +5,7 @@ import { clamp, lerp, smoothstep, D2R, fmt, wrapAngle } from '../core/math.js';
 import { emit, toast } from '../core/events.js';
 import { crevasseLocal } from '../world/props.js';
 import { SegmentIndex } from '../core/spatial.js';
-import { game, die, nearCamp, region } from './game.js';
+import { game, die, nearCamp, region, speedFactor } from './game.js';
 import { hypF, maxStamina, packLoad } from './physiology.js';
 
 // ---------------- fixed ropes
@@ -41,7 +41,7 @@ export function clipTo(rope) {
   game.P.clipped = rope; game.P.ropeHint = -1;
 }
 
-function seracCollide(x, z) {
+export function seracCollide(x, z) {
   const kx = Math.floor(x / 20), kz = Math.floor(z / 20), grid = game.world.seracGrid;
   for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
     const list = grid.get(kx + a + ',' + (kz + b)); if (!list) continue;
@@ -59,6 +59,7 @@ export function interact() {
   if (P.falling) return;
   const camp = nearCamp(P.x, P.z);
   if (camp) { emit('openCamp', camp); return; }
+  if (P.ski) { toast('You cannot clip into a rope with skis on — [X] takes them off.', 'warn', 3); return; }
   const ropes = game.world.ropes;
   if (P.clipped >= 0) {
     const other = nearestRope(P.x, P.z, P.clipped);
@@ -73,6 +74,7 @@ export function interact() {
 /** F: follow the route, stopping at camps. Shift+F (nonstop): only stop at the end of the route. */
 export function startAutopilot({ nonstop = false } = {}) {
   const { P, routes, view } = game;
+  if (P.ski) { toast('Take your skis off [X] to follow the route.', 'warn', 3); return false; }
   const fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw);
   // pick the route you are on - at the Yellow Band junction, the one you are facing
   let best = null;
@@ -156,8 +158,9 @@ export function updatePlayer(dt, ctl) {
     const windF = 1 - clamp((game.env.wind - 35) / 160, 0, 0.35) * head;
     const stamF = S.stamina < 8 && grade > 0.2 ? 0.55 : 1;
     const v3 = (sprint ? MOVE.sprint : MOVE.walk) * slopeF * hypF(S) * weightF * exhF * frostF * windF * stamF;
+    const mul = speedFactor();          // debug walk speed
     P.sprint = sprint;
-    const vh = v3 / Math.sqrt(1 + grade * grade);
+    const vh = (v3 * mul) / Math.sqrt(1 + grade * grade);
     let nx = P.x + dx * vh * dt, nz = P.z + dz * vh * dt;
     // crevasses: cross on the ladder or fall in
     for (const cv of game.world.crevasses) {

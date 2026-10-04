@@ -3,6 +3,7 @@ import { clamp } from './core/math.js';
 import { emit } from './core/events.js';
 import { game, toggleO2, setFlow } from './sim/game.js';
 import { interact, startAutopilot, stopAutopilot } from './sim/player.js';
+import { toggleSkis } from './sim/ski.js';
 import { escapePressed } from './ui/screens.js';
 
 export const keys = new Set();
@@ -22,6 +23,7 @@ export function initInput({ onDebugKey } = {}) {
       case 'BracketLeft': case 'Minus': setFlow(game.S.flow - 1); break;
       case 'KeyV': game.view.fp = !game.view.fp; document.getElementById('crosshair').classList.toggle('hidden', !game.view.fp); break;
       case 'KeyM': document.getElementById('hudTR').classList.toggle('big'); break;
+      case 'KeyX': toggleSkis(); break;        // easter egg
       case 'KeyT': if (game.free) { emit('openTravel'); break; } if (onDebugKey) onDebugKey(e.code); break;
       default:
         if (/^Digit[1-4]$/.test(e.code)) setFlow(Number(e.code.slice(5)));

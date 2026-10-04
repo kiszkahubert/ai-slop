@@ -47,6 +47,20 @@ also sets the time of day (sunrise, noon, sunset, night) and can force clear ski
 Survival systems are off in free viewing: no hypoxia, cold, falls or crevasses. Nothing is saved, so the expedition
 you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.
 
+**Exit free viewing — climb on from here** (in the T panel) turns survival systems back on where you stand. It starts
+a fresh expedition from that spot, acclimatized as after the usual rotations (up to ~7,000 m), with oxygen on above
+7,000 m. Your old save is kept until you next rest or save at a camp. The panel also sets a **walk speed** multiplier
+(×1–×16) for getting around quickly; it is a debug aid and only applies in free viewing or with `?debug`.
+
+<details><summary>Easter egg (spoiler)</summary>
+
+Press **X** anywhere to strap on skis and ski down the mountain. Gravity pulls you down the fall line and your edges
+hold you along the skis. Steer toward the way you want to go: **W** skates, **A**/**D** carve, **S** snowploughs to a
+stop and **Shift** tucks. Press **X** again to take them off once you have slowed down. On a real expedition the
+mountain still bites: take a crevasse too slowly and you drop in, hit a serac fast and it hurts, and above ~120 km/h
+your skis may chatter loose. Skis are off-limits for fixed ropes and the route-following autopilot.
+</details>
+
 ## Debrief
 
 When the expedition ends — summit and descent to Camp 2, or death on the mountain — the end screen offers a
@@ -84,7 +98,7 @@ offline, open <http://localhost:8080/?localthree> instead, which uses the copy i
 | O | Oxygen on/off · 1–4 or `[` `]` flow in L/min |
 | V | Third / first person · mouse wheel sets camera distance |
 | M | Enlarge the route map |
-| T | Free viewing only: teleport to a camp or summit, set the time of day and weather |
+| T | Free viewing only: teleport to a camp or summit, set the time of day, weather and walk speed, or exit and climb on from where you stand |
 | Esc | Pause |
 
 ## Project layout
@@ -163,7 +177,7 @@ npm run lint                   # ESLint (eslint.config.js)
 npm run test:unit              # fast node:test suites: physiology, weather, route model, spatial index, saves
 npm run test:terrain           # Python regressions: GeoTIFF alignment, NoData, geoid conversion, asset metadata
 npm run verify:terrain         # with source files in dem/: verify encoded heights and complete route coverage
-npm run test:e2e               # Playwright: hazards, UI flows, free viewing, full Everest and Lhotse expeditions
+npm run test:e2e               # Playwright: hazards, UI flows, free viewing, skis, full Everest and Lhotse expeditions
 npm test                       # unit + e2e
 node tests/harness.mjs tests/hazards.json   # a single e2e suite
 ```
@@ -180,7 +194,8 @@ screen, chart, verdicts, journal and stats all render. The hazard tests check th
 - **Crevasses:** stepping into one kills you, and the ladder crossing works.
 - **Ropes:** unclipped climbers slip on the Lhotse Face, and clipped ones don't.
 
-Add `?debug` to the URL for test keys: `T`/`G` teleport between waypoints and `K` advances one hour. `window.__sim`
+Add `?debug` to the URL for test keys: `T`/`G` teleport between waypoints, `K` advances one hour, and `,`/`.`
+lower/raise the walk speed (×0.25–×32). `window.__sim`
 exposes a small API.
 
 ## Data

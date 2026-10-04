@@ -3,7 +3,7 @@
 import { TURNAROUND_H, DEATH_ZONE, OXYGEN, SLIP_ANGLE } from '../config.js';
 import { clamp, fmt, timeOfDay, dayOf, hourOfDay, compassName, D2R } from '../core/math.js';
 import { on, toast } from '../core/events.js';
-import { game, nearCamp, region } from '../sim/game.js';
+import { game, nearCamp, region, speedFactor } from '../sim/game.js';
 import { o2Flowing, maxStamina, packLoad } from '../sim/physiology.js';
 import { nearestRope } from '../sim/player.js';
 import { crevasseLocal } from '../world/props.js';
@@ -92,6 +92,8 @@ export function updateHUD(dt) {
   // status
   const pills = [], ropes = game.world.ropes;
   if (game.free) pills.push('<span class="pill on">Free viewing · [T] teleport</span>');
+  if (P.ski) pills.push(`<span class="pill on">⛷ Skis · ${Math.round(P.ski.speed * 3.6)} km/h${P.ski.tuck ? ' · tuck' : P.ski.brake ? ' · snowplough' : ''}</span>`);
+  if (speedFactor() !== 1) pills.push(`<span class="pill">Walk speed ×${game.speedMul}</span>`);
   if (P.clipped >= 0) pills.push(`<span class="pill on">Clipped: ${ropes[P.clipped].name}</span>`);
   if (game.auto) pills.push('<span class="pill on">Following route ⏩</span>');
   if (P.onLadder) pills.push('<span class="pill">On ladder</span>');

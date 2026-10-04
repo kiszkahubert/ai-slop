@@ -1,4 +1,4 @@
-// The climber: down suit, pack with an oxygen bottle, helmet, mask and ice axe.
+// The climber: down suit, pack with an oxygen bottle, helmet, mask and ice axe (and, secretly, skis).
 import * as THREE from 'three';
 
 export function makeClimber(scene) {
@@ -28,6 +28,20 @@ export function makeClimber(scene) {
   const axe = new THREE.Group(); axe.position.set(0, -0.6, 0); arms[1].add(axe);
   mk(new THREE.BoxGeometry(0.03, 0.62, 0.03), dark, 0, -0.2, -0.05, axe);
   mk(new THREE.BoxGeometry(0.03, 0.04, 0.28), M(0x999999, { metalness: 0.8 }), 0, 0.08, -0.05, axe);
+  // easter egg: skis and poles, shown while skiing
+  const skis = new THREE.Group(); g.add(skis);
+  const skiMat = M(0x1f6fd1, { roughness: 0.35 }), tipMat = M(0xf4f4f4, { roughness: 0.4 });
+  for (const s of [-1, 1]) {
+    mk(new THREE.BoxGeometry(0.09, 0.025, 1.7), skiMat, 0.13 * s, 0.03, 0.05, skis);
+    mk(new THREE.BoxGeometry(0.09, 0.025, 0.18), tipMat, 0.13 * s, 0.07, -0.86, skis).rotation.x = 0.45;
+  }
+  const poles = arms.map((sh) => {
+    const p = new THREE.Group(); p.position.set(0, -0.6, 0); sh.add(p);
+    mk(new THREE.CylinderGeometry(0.012, 0.012, 1.15, 6), dark, 0, -0.5, 0.05, p);
+    mk(new THREE.CylinderGeometry(0.05, 0.05, 0.01, 10), dark, 0, -0.95, 0.05, p);
+    return p;
+  });
+  g.rotation.order = 'YXZ';             // pitch about the climber's own axis
   scene.add(g);
 
   return {
@@ -35,6 +49,19 @@ export function makeClimber(scene) {
     update(dt, P) {
       g.position.set(P.x, P.y, P.z);
       g.rotation.y += Math.atan2(Math.sin(P.facing - g.rotation.y), Math.cos(P.facing - g.rotation.y)) * Math.min(1, dt * 10);
+      const K = P.ski;
+      skis.visible = !!K; poles.forEach((p) => { p.visible = !!K; }); axe.visible = !K;
+      if (K) {                          // skiing stance: knees bent, leaning forward, poles back, deeper in a tuck
+        const lean = K.tuck ? -0.45 : K.brake ? -0.05 : -0.18;
+        g.rotation.x += (lean - g.rotation.x) * Math.min(1, dt * 6);
+        legs[0].rotation.x = legs[1].rotation.x = -lean * 0.6;
+        legs[0].rotation.z = K.brake ? 0.12 : 0; legs[1].rotation.z = K.brake ? -0.12 : 0;
+        arms[0].rotation.x = arms[1].rotation.x = K.tuck ? -1.1 : -0.35;
+        poles.forEach((p) => { p.rotation.x = K.tuck ? 1.9 : 0.5; });
+        skis.rotation.x = K.pitch - g.rotation.x;
+        return;
+      }
+      legs[0].rotation.z = legs[1].rotation.z = 0;
       const sw = Math.sin(P.phase) * (P.moving ? 0.65 : 0);
       legs[0].rotation.x = sw; legs[1].rotation.x = -sw;
       arms[0].rotation.x = -sw * 0.8; arms[1].rotation.x = sw * 0.8 - (P.grade > 0.5 ? 0.9 : 0.2);

@@ -4,7 +4,7 @@ import { fmt, timeOfDay, dayOf, hourOfDay, clamp } from '../core/math.js';
 import { on, emit, toast } from '../core/events.js';
 import { mulberry32 } from '../core/noise.js';
 import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, region, score,
-  destinations, teleportTo, enterFreeViewing, setHour, setClearWeather } from '../sim/game.js';
+  destinations, teleportTo, enterFreeViewing, exitFreeViewing, setHour, setClearWeather, setSpeedMul } from '../sim/game.js';
 import { nearestRope, clipTo } from '../sim/player.js';
 import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
@@ -121,6 +121,7 @@ function renderTravel() {
   const here = region(), hod = hourOfDay(game.time), clear = !!game.weather.clear;
   const dests = destinations().map((d) => `<button data-act="tp" data-id="${d.id}" class="${d.summit ? 'primary' : ''}">${d.name}<br><span class="dim" style="font-size:11px">${fmt(d.elevation)} m</span></button>`).join('');
   const hours = [[5.3, 'Sunrise'], [8, 'Morning'], [12, 'Noon'], [17, 'Afternoon'], [18.6, 'Sunset'], [1, 'Night']];
+  const speeds = [1, 2, 4, 8, 16].map((m) => `<button data-act="speed" data-m="${m}" ${game.speedMul === m ? 'disabled' : ''}>×${m}</button>`).join('');
   const time = hours.map(([h, n]) => `<button data-act="hour" data-h="${h}" ${Math.abs(hod - h) < 0.4 ? 'disabled' : ''}>${n}</button>`).join('');
   $('campCard').innerHTML = `
     <h2>Free viewing <span class="dim" style="font-weight:400">· ${here} · ${fmt(game.P.y)} m</span></h2>
@@ -134,6 +135,14 @@ function renderTravel() {
     <div class="btns">
       <button data-act="clear" data-on="1" ${clear ? 'disabled' : ''}>Clear skies</button>
       <button data-act="clear" data-on="0" ${clear ? '' : 'disabled'}>Real forecast weather</button>
+    </div>
+    <h3>Walk speed <span class="dim" style="font-weight:400">· debug</span></h3>
+    <div class="btns">${speeds}</div>
+    <h3>Climb for real</h3>
+    <p class="note">Survival systems back on, right here: a fresh expedition from where you stand, acclimatized as after the
+      rotations and on oxygen above 7,000 m. Your old save is kept until you rest or save at a camp.</p>
+    <div class="btns">
+      <button data-act="exit-free">Exit free viewing — climb on from here</button>
     </div>
     <div class="btns" style="margin-top:16px">
       <button data-act="new-exp">Start a real expedition</button>
@@ -204,6 +213,8 @@ function onCampClick(e) {
   if (act === 'tp') { teleportTo(b.dataset.id); resumePlay(); return; }
   if (act === 'hour') { setHour(Number(b.dataset.h)); renderTravel(); return; }
   if (act === 'clear') { setClearWeather(b.dataset.on === '1'); renderTravel(); return; }
+  if (act === 'speed') { setSpeedMul(Number(b.dataset.m)); renderTravel(); return; }
+  if (act === 'exit-free') { exitFreeViewing(); resetHUD(); resumePlay(); return; }
   if (act === 'new-exp') { $('btnNew').onclick(); return; }
   if (act === 'continue-exp') { $('btnContinue').onclick(); return; }
   if (act === 'o2') toggleO2();
