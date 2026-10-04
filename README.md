@@ -40,6 +40,17 @@ also sets the time of day (sunrise, noon, sunset, night) and can force clear ski
 Survival systems are off in free viewing: no hypoxia, cold, falls or crevasses. Nothing is saved, so the expedition
 you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.
 
+## Debrief
+
+When the expedition ends — summit and descent to Camp 2, or death on the mountain — the end screen offers a
+**Debrief**. It records altitude, SpO₂ and oxygen telemetry during the climb and shows:
+
+- an altitude profile coloured by blood-oxygen level, with the death zone, camps, summits, slips and the point of
+death marked, an oxygen strip along the bottom and a hover tooltip for any moment;
+- verdicts on turnaround discipline, oxygen use in the death zone, hypoxia, acclimatization, frostbite and falls;
+- a decision-by-decision journal of camps, rests, oxygen changes, bottle swaps and slips;
+- the key numbers of the expedition and its score.
+
 ## Run
 
 ES modules and the terrain files must be served over HTTP. Opening `index.html` from disk will not work.
@@ -94,8 +105,10 @@ src/
     player.js         movement, ropes, crevasses, slips & falls, route-following autopilot
     weather.js        jet stream, storms, summit windows, wind / temperature / visibility
     step.js           one simulation tick (also used by the tests)
+    debrief.js        expedition telemetry and the end-of-climb analysis / verdicts
   render/             climber model, camera rig
   ui/                 HUD, route map, screens (title / pause / camp / death / win), toasts
+    debrief.js        debrief screen: altitude / SpO₂ / oxygen chart, journal and stats
 assets/
   terrain/core.png, backdrop.png, meta.json   heights as RGB (h = (R·256 + G) / 4 m), B = glacier mask
   route.json                                  generated route paths and waypoint tags
@@ -141,7 +154,8 @@ offline. Software (SwiftShader) rendering makes screenshots slow, so each one ma
 (`.github/workflows/ci.yml`).
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
-must end with a win. The hazard tests check three things:
+must end with a win. The debrief test kills the climber through the physiology system and checks that the debrief
+screen, chart, verdicts, journal and stats all render. The hazard tests check three things:
 - **Death zone:** without oxygen at 8,400 m you die (about 5–6 game hours), while 3 L/min keeps you alive.
 - **Crevasses:** stepping into one kills you, and the ladder crossing works.
 - **Ropes:** unclipped climbers slip on the Lhotse Face, and clipped ones don't.

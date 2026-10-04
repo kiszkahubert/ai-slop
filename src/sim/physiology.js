@@ -2,7 +2,7 @@
 // exhaustion and health. Rates are per game hour.
 import { OXYGEN, DEATH_ZONE } from '../config.js';
 import { clamp, smoothstep } from '../core/math.js';
-import { toast } from '../core/events.js';
+import { toast, emit } from '../core/events.js';
 import { windChill, sunDirection } from './weather.js';
 
 export const o2Flowing = (S) => S.o2on && S.tanks.length > 0 && S.tanks[0] > OXYGEN.emptyBar;
@@ -23,6 +23,7 @@ export function swapTank(S, auto) {
   const before = S.tanks.length;
   S.tanks = S.tanks.filter((p) => !isEmptyBottle(p));
   const dropped = before - S.tanks.length;
+  if (dropped) emit('bottle', S.tanks.length, S.tanks[0] || 0);
   if (!S.tanks.length) {
     if (S.o2on) { S.o2on = false; toast('Oxygen bottle empty — no spares left!', 'bad', 6); }
     return;
