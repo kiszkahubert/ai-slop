@@ -1,23 +1,56 @@
 {
- "encoding": "height = (R * 256 + G) / 4 metres; B = glacier mask (core only)",
- "origin": {
-  "lat": 27.988056,
-  "lon": 86.925278,
-  "note": "Mount Everest summit; x = east, z = south"
- },
- "source": "Copernicus GLO-30 DEM (ESA, distributed by AWS Open Data), summit elevations corrected to surveyed values",
- "core": {
-  "x0": -10240,
-  "z0": -4608,
-  "cell": 15,
-  "nx": 1025,
-  "nz": 769
- },
- "backdrop": {
-  "x0": -46080,
-  "z0": -40960,
-  "cell": 160,
-  "nx": 577,
-  "nz": 513
- }
+  "encoding": "height = (R * 256 + G) / 4 metres; B = glacier mask (core only)",
+  "origin": {
+    "lat": 27.988056,
+    "lon": 86.925278,
+    "note": "Mount Everest summit; x = east, z = south"
+  },
+  "source": "Pl\u00e9iades 23 March 2017, 4 m, DOI 10.5281/zenodo.6979691; Copernicus fallback outside valid stereo coverage",
+  "provenance": {
+    "doi": "10.5281/zenodo.6979691",
+    "author": "Etienne Berthier",
+    "license": "CC BY 4.0",
+    "file": "Khumbu_2017-03-23_DEM_4m.tif",
+    "md5": "44802a17c0272233d95e08188ca19488",
+    "horizontal_crs": "EPSG:32645",
+    "vertical": {
+      "input": "WGS84 ellipsoidal (ASP interpretation; source vertical CRS unspecified)",
+      "output": "EGM2008 orthometric",
+      "formula": "H = h - N",
+      "geoid": "NGA EGM2008, 2.5 arc-minute grid",
+      "geoid_url": "https://cdn.proj.org/us_nga_egm08_25.tif",
+      "geoid_sha256": "4191d471eefebf24091b56dbc604353cb3b8cf8cc70e448bb9ae56a272bef17a"
+    },
+    "fallback": {
+      "source": "Copernicus GLO-30 DEM (ESA, distributed by AWS Open Data), summit elevations corrected to surveyed values",
+      "sha256": {
+        "core.png": "0b95033b776e8ceb333a17f58c0cb70a61e4f820c80218807fe77a557158bd7e",
+        "backdrop.png": "b432955f7a8a8ca331105c0b0b5b07c8aafac82b9af410116cc7fe592f6336a4",
+        "meta.json": "7d4309e1d2dfd932c2a902689119f440c6c3eddbef0e559b841b087263b375c8"
+      }
+    },
+    "blending_metres": 40,
+    "core_pleiades_fraction": 0.499992,
+    "core_full_pleiades_fraction": 0.443572,
+    "backdrop_pleiades_fraction": 0.026652
+  },
+  "runtime": {
+    "refine": 1,
+    "proceduralDetail": false,
+    "note": "Native 4 m grid; boot-track smoothing, camp terraces and local summit caps only"
+  },
+  "core": {
+    "x0": -10240,
+    "z0": -4608,
+    "cell": 4,
+    "nx": 3841,
+    "nz": 2881
+  },
+  "backdrop": {
+    "x0": -46080,
+    "z0": -40960,
+    "cell": 160,
+    "nx": 577,
+    "nz": 513
+  }
 }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { fmt } from '../core/math.js';
 import { makeNoise2D, mulberry32 } from '../core/noise.js';
 import { ropeDefs } from './route.js';
+import { routeCrevasse } from './routeHazards.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -125,9 +126,10 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
   for (let k = 0; k < 13; k++) crossings.push(iceA + (iceB - iceA) * (k + 0.5) / 13);
   crossings.push(m.s('c1') + 260, m.s('c1') + 520, m.s('c1') + 780);
   for (const s of crossings) {
-    const p = m.at(s), ang = Math.atan2(p.dz, p.dx) + Math.PI / 2 + (r() - 0.5) * 0.7;
+    const angleOffset = (r() - 0.5) * 0.7;
     const wide = s > m.s('c1');
-    world.crevasses.push({ x: p.x, z: p.z, ux: Math.cos(ang), uz: Math.sin(ang), len: 30 + r() * 50, w: wide ? 4.5 + r() * 2.5 : 2.6 + r() * 2, ladder: true });
+    const cv = routeCrevasse(m, s, { angleOffset, length: 30 + r() * 50, width: wide ? 4.5 + r() * 2.5 : 2.6 + r() * 2 });
+    if (cv) world.crevasses.push(cv);
   }
   let tries = 0;
   while (world.crevasses.length < 90 && tries++ < 5000) {

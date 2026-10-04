@@ -5,6 +5,7 @@ import { game, checkProgress, die, refreshConditions } from './game.js';
 import { stepPhysiology } from './physiology.js';
 import { recordSample } from './debrief.js';
 import { updatePlayer, stopAutopilot } from './player.js';
+import { updateSki } from './ski.js';
 
 let envTimer = 0;
 
@@ -22,7 +23,7 @@ export function simStep(dt, ctl) {
     game.env.exposure = clamp(1 + (P.y - around) / 80, 0.6, 1.45);
     refreshConditions();
   }
-  updatePlayer(dt, ctl);
+  if (game.P.ski && !game.P.falling) updateSki(dt, ctl); else updatePlayer(dt, ctl);
   if (game.mode !== 'play') return false;
   const P = game.P;
   if (game.free) {                      // free viewing: no physiology, always fit and well

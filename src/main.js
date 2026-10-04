@@ -3,14 +3,15 @@ import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
 import { loadRoutes, campsFor } from './world/route.js';
-import { PEAKS } from './world/geo.js';
+import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
 import { createTerrainMaterial } from './world/terrainMaterial.js';
 import { buildProps } from './world/props.js';
 import { Environment } from './world/environment.js';
 import { makeClimber } from './render/climber.js';
 import { CameraRig } from './render/camera.js';
-import { game, newGame, restHours, placePlayer } from './sim/game.js';
+import { game, newGame, restHours, placePlayer, setSpeedMul } from './sim/game.js';
+import { toggleSkis } from './sim/ski.js';
 import { simStep } from './sim/step.js';
 import { stepPhysiology } from './sim/physiology.js';
 import { startAutopilot, interact, nearestRope } from './sim/player.js';
@@ -22,6 +23,7 @@ import { initScreens, showTitle } from './ui/screens.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
+game.debug = DEBUG;
 const canvas = document.getElementById('gl');
 const loadMsg = document.getElementById('loadMsg');
 const step = (t) => new Promise((r) => { loadMsg.textContent = t; setTimeout(r, 20); });
@@ -40,12 +42,13 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 let env, terrain, backdrop, climber, rig;
 
 async function boot() {
-  await step('Loading the Copernicus GLO-30 elevation model…');
+  await step('Loading the Pléiades elevation model…');
   const meta = await (await fetch(TERRAIN.metaUrl)).json();
   const [field, back, routes] = await Promise.all([CoreField.load(meta), BackdropField.load(meta), loadRoutes()]);
+  alignClimbingSummits(routes);
   game.routes = routes; game.backdrop = back;
   game.camps = campsFor(routes);
-  await step('Refining the terrain to 7.5 m and kicking in the boot track…');
+  await step('Preparing the native 4 m terrain and boot track…');
   const t0 = performance.now();
   const top = (r, id) => ({ ...r.pts[r.pts.length - 1], e: PEAKS.find((p) => p.id === id).e });
   field.refine([routes.main, routes.lhotse], game.camps, 1, [top(routes.main, 'everest'), top(routes.lhotse, 'lhotse')]);
@@ -101,7 +104,12 @@ function frame(now) {
 const all = () => [...game.routes.main.pts.filter((_, i) => Object.values(game.routes.main.tags).includes(i)), ...game.routes.lhotse.pts.slice(-1)];
 let dbgIdx = 0;
 const teleport = (x, z) => placePlayer(x, z);
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 function debugKey(code) {
+  if (code === 'Comma' || code === 'Period') {       // walk speed
+    const i = SPEEDS.findIndex((v) => v >= game.speedMul);
+    setSpeedMul(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? SPEEDS.length - 1 : i) + (code === 'Period' ? 1 : -1)))]);
+  }
   if (code === 'KeyT' || code === 'KeyG') {
     const pts = all(); dbgIdx = Math.max(0, Math.min(pts.length - 1, dbgIdx + (code === 'KeyT' ? 1 : -1)));
     teleport(pts[dbgIdx].x, pts[dbgIdx].z);
@@ -109,7 +117,7 @@ function debugKey(code) {
   if (code === 'KeyK') { game.time += 1; stepPhysiology(game, 1, { moving: false, sprint: false, grade: 0 }); }
 }
 const api = {
-  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope,
+  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul,
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

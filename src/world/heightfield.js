@@ -1,8 +1,8 @@
-// Height fields built from the Copernicus GLO-30 DEM (see tools/build_assets.py).
+// Native Pléiades height fields with Copernicus fallback (tools/build_pleiades_assets.py).
 //
-// CoreField: the 15.4 × 11.5 km climbing area. The 15 m source grid is refined to 7.5 m at
-// load time (Catmull-Rom interpolation + slope-aware fractal detail), then a kicked-in boot
-// track is levelled along the route and small terraces are cut for the camps.
+// CoreField: the 15.4 × 11.5 km climbing area at 4 m. Measured terrain is kept without
+// procedural height noise or invented couloir walls; a boot track and camp terraces
+// provide the walking surface. Metadata can still enable refinement for legacy grids.
 // BackdropField: 92 × 82 km of the surrounding Himalaya at 160 m for the horizon.
 import { TERRAIN } from '../config.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
@@ -52,38 +52,47 @@ export class BackdropField extends GridField {
 }
 
 export class CoreField extends GridField {
+  constructor(g, h, options = {}) {
+    super(g, h);
+    this.refineFactor = options.refine ?? TERRAIN.refine;
+    this.proceduralDetail = options.proceduralDetail ?? false;
+  }
   static async load(meta) {
     const img = await loadPixels(TERRAIN.coreUrl);
     const { h, b } = decode(img);
-    const f = new CoreField(meta.core, h);
-    f.base = new GridField(meta.core, h);   // natural 15 m surface (used for exposure / slip risk)
+    const f = new CoreField(meta.core, h, meta.runtime);
+    f.base = new GridField(meta.core, h);   // measured surface (used for exposure / slip risk)
     f.glacierBase = b;
     return f;
   }
 
   /**
-   * Refine to 7.5 m, add detail, level the boot track and cut camp terraces.
+   * Keep the native grid (or refine a legacy grid), level the track and cut camp terraces.
    * summits: [{ x, z, e }] - points snapped to their surveyed elevation (the smoothed track profile
    * would otherwise shave a few metres off a sharp top).
    */
   refine(routes, camps, seed = 1, summits = []) {
-    const R = TERRAIN.refine, B = this.base, noise = makeNoise2D(mulberry32(seed));
+    const R = this.refineFactor, B = this.base, noise = makeNoise2D(mulberry32(seed));
+    if (R !== 1 && R !== 2) throw new Error('Terrain refinement must be 1 or 2');
     const nx = (B.nx - 1) * R + 1, nz = (B.nz - 1) * R + 1, cell = B.cell / R;
-    const H = new Float32Array(nx * nz);
+    // Copy at native resolution: track/camp edits must not change the face-slope source.
+    const H = R === 1 ? B.h.slice() : new Float32Array(nx * nz);
     // separable Catmull-Rom; with R = 2 only the phases 0 and ½ occur
     const W = [[0, 1, 0, 0], [-1 / 16, 9 / 16, 9 / 16, -1 / 16]];
-    const tmp = new Float32Array(nx * B.nz);
-    for (let j = 0; j < B.nz; j++) for (let i = 0; i < nx; i++) {
-      const bi = Math.floor(i / R), w = W[i % R]; let s = 0;
-      for (let k = 0; k < 4; k++) s += w[k] * B.heightAt(bi - 1 + k, j);
-      tmp[j * nx + i] = s;
-    }
-    for (let j = 0; j < nz; j++) {
-      const bj = Math.floor(j / R), w = W[j % R];
-      for (let i = 0; i < nx; i++) {
-        let s = 0;
-        for (let k = 0; k < 4; k++) s += w[k] * tmp[clamp(bj - 1 + k, 0, B.nz - 1) * nx + i];
-        H[j * nx + i] = s;
+    if (R === 2) {
+      const tmp = new Float32Array(nx * B.nz);
+      for (let j = 0; j < B.nz; j++) for (let i = 0; i < nx; i++) {
+        const bi = Math.floor(i / R), w = W[i % R]; let s = 0;
+        for (let k = 0; k < 4; k++) s += w[k] * B.heightAt(bi - 1 + k, j);
+        tmp[j * nx + i] = s;
+      }
+      for (let j = 0; j < nz; j++) {
+        const bj = Math.floor(j / R), w = W[j % R];
+        for (let i = 0; i < nx; i++) {
+          let s = 0;
+          for (let k = 0; k < 4; k++) s += w[k] * tmp[clamp(bj - 1 + k, 0, B.nz - 1) * nx + i];
+          H[j * nx + i] = s;
+        }
       }
     }
     // distance to the boot track, with the index of the nearest route point
@@ -122,8 +131,7 @@ export class CoreField extends GridField {
       return hv;
     };
     const pads = camps.map((c) => ({ x: c.x, z: c.z, h: profiles[c.routeIndex][c.pointIndex], rin: c.pad[0], rout: c.pad[0] + c.pad[1] }));
-    // features the 30 m DEM cannot resolve: the rock walls of the Lhotse (Reiss) Couloir and the
-    // black rock of the Geneva Spur. They are written into a rock-exposure mask for the shader.
+    // Rock-exposure shading for the Lhotse Couloir and Geneva Spur.
     const lh = routes[1], couloirFrom = lh.tags.couloir - 20;
     const gen = routes[0].pts[routes[0].tags.geneva];
     const rockMask = new Uint8Array(nx * nz);
@@ -134,26 +142,26 @@ export class CoreField extends GridField {
       for (let i = 0; i < nx; i++) {
         const x = B.x0 + i * cell, o = j * nx + i;
         const bi = clamp(Math.round(i / R), 1, B.nx - 2), bj = clamp(Math.round(j / R), 1, B.nz - 2);
-        const gx = (B.heightAt(bi + 1, bj) - B.heightAt(bi - 1, bj)) / (2 * B.cell);
-        const gz = (B.heightAt(bi, bj + 1) - B.heightAt(bi, bj - 1)) / (2 * B.cell);
-        const slope = Math.hypot(gx, gz), gl = this.glacierBase[bj * B.nx + bi] / 255;
         glacier[o] = this.glacierBase[bj * B.nx + bi];
         let h = H[o];
-        // fractal detail: rugged rock, smoother snow, gentle glacier; seracs in the Icefall
-        const rock = smoothstep(0.75, 1.3, slope);
-        let amp = lerp(1.1, 3.6, rock) * (1 - 0.6 * gl);
-        const n = noise(x / 55, z / 55) * 0.55 + noise(x / 23 + 7.1, z / 23 - 3.3) * 0.3 + noise(x / 9.5 - 2.2, z / 9.5 + 5.4) * 0.15;
-        let detail = n * amp;
-        const icefall = gl * smoothstep(5330, 5420, h) * (1 - smoothstep(5960, 6040, h));
-        if (icefall > 0) detail += icefall * (3.5 * (1 - Math.abs(noise(x / 26, z / 26))) - 1.6);
         const td = tDist[o];
-        detail *= smoothstep(2.5, 12, td);
-        h += detail;
+        if (this.proceduralDetail) { // optional legacy detail, never added to the Pléiades surface
+          const gx = (B.heightAt(bi + 1, bj) - B.heightAt(bi - 1, bj)) / (2 * B.cell);
+          const gz = (B.heightAt(bi, bj + 1) - B.heightAt(bi, bj - 1)) / (2 * B.cell);
+          const slope = Math.hypot(gx, gz), gl = this.glacierBase[bj * B.nx + bi] / 255;
+          const amp = lerp(1.1, 3.6, smoothstep(0.75, 1.3, slope)) * (1 - 0.6 * gl);
+          const n = noise(x / 55, z / 55) * 0.55 + noise(x / 23 + 7.1, z / 23 - 3.3) * 0.3 + noise(x / 9.5 - 2.2, z / 9.5 + 5.4) * 0.15;
+          let detail = n * amp;
+          const icefall = gl * smoothstep(5330, 5420, h) * (1 - smoothstep(5960, 6040, h));
+          if (icefall > 0) detail += icefall * (3.5 * (1 - Math.abs(noise(x / 26, z / 26))) - 1.6);
+          h += detail * smoothstep(2.5, 12, td);
+        }
         let rk = 0;
         const t = tRef[o] >= 0 ? track[tRef[o]] : null;
         if (t && t.r === 1 && t.i > couloirFrom && td > 4) {        // couloir walls
           const wall = smoothstep(4.5, 8.5, td) * (1 - smoothstep(11.5, 14, td)) * smoothstep(couloirFrom, couloirFrom + 30, t.i);
-          h += 9 * wall; rk = Math.max(rk, smoothstep(5, 8, td) * smoothstep(couloirFrom, couloirFrom + 30, t.i));
+          if (this.proceduralDetail) h += 9 * wall;
+          rk = Math.max(rk, smoothstep(5, 8, td) * smoothstep(couloirFrom, couloirFrom + 30, t.i));
         }
         const dg = Math.hypot(x - gen.x - 40, z - gen.z + 30);
         if (dg < 170) rk = Math.max(rk, (1 - smoothstep(60, 170, dg)) * (td > 5 ? 1 : 0.3));
@@ -189,7 +197,9 @@ export class CoreField extends GridField {
   }
   /** steepness of the natural face (ignores the levelled track) - drives fall risk and exposure */
   faceSlope(x, z) {
-    const B = this.base, e = B.cell;
+    // Face exposure is a physical scale. A finer grid must not turn an isolated
+    // four-metre ice bump on the Cwm into a steep mountainside slip hazard.
+    const B = this.base, e = Math.max(B.cell, TERRAIN.faceSampleDistance);
     return Math.hypot(B.height(x + e, z) - B.height(x - e, z), B.height(x, z + e) - B.height(x, z - e)) / (2 * e);
   }
   distanceToTrack(x, z) {

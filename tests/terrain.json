@@ -1,0 +1,11 @@
+[
+  {"script":"tests/terrain.js","expect":"r.cell === 4 && r.baseCell === 4 && r.nodes === 11065921 && r.everest === 8849 && r.lhotse === 8516 && r.measuredOffTrack && r.balcony > 8380 && r.balcony < 8420 && r.connected && r.source === '10.5281/zenodo.6979691' && !r.proceduralDetail"},
+  {"click":"#btnFree"},
+  {"click":"[data-act=tp][data-id=c2]"},
+  {"wait":2500},
+  {"shot":"terrain_cwm.png"},
+  {"key":"KeyT"},
+  {"click":"[data-act=tp][data-id=everest]"},
+  {"wait":2500},
+  {"shot":"terrain_everest.png"}
+]

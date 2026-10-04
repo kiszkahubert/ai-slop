@@ -1,0 +1,2 @@
+# The frozen fallback metadata is a checksummed source; preserve its exact bytes.
+tools/terrain-fallback/meta.json -text whitespace=cr-at-eol

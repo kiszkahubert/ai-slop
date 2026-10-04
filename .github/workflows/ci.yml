@@ -18,6 +18,11 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run test:unit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy scipy pillow pyproj
+      - run: npm run test:terrain
 
   e2e:
     needs: lint-and-unit

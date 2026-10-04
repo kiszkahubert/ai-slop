@@ -1,9 +1,9 @@
 // Game state, progress (camps, landmarks, summits, win), camps (rest, oxygen) and saving.
 import { START_TIME_H, OXYGEN, DEATH_ZONE } from '../config.js';
 import { emit, toast } from '../core/events.js';
-import { fmt, timeOfDay, dayOf } from '../core/math.js';
+import { fmt, timeOfDay, dayOf, clamp } from '../core/math.js';
 import { Weather } from './weather.js';
-import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyBottle } from './physiology.js';
+import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyBottle, spo2Target } from './physiology.js';
 import { resetDebrief, recordSample } from './debrief.js';
 import { LANDMARKS, regionName } from '../world/route.js';
 import { PEAKS } from '../world/geo.js';
@@ -14,29 +14,35 @@ export const game = {
   mode: 'loading',        // loading | title | play | paused | camp | dead | won
   time: START_TIME_H,     // game hours since Day 1 00:00
   S: {},                  // climber stats, inventory and progress
-  P: { x: 0, z: 0, y: 0, facing: 0, moving: false, sprint: false, grade: 0, falling: null, onLadder: false, clipped: -1, phase: 0, routeHint: -1 },
+  P: { x: 0, z: 0, y: 0, facing: 0, moving: false, sprint: false, grade: 0, falling: null, onLadder: false, clipped: -1, phase: 0, routeHint: -1, ski: null },
   view: { yaw: 0, pitch: -0.15, dist: 7, fp: false },
   env: { T: 0, wind: 0, wc: 0, vis: 60, sunEl: 0, cwm: false, exposure: 1 },
   auto: null,             // route-following autopilot state
   free: false,            // free viewing: teleport anywhere, survival systems off, nothing saved
+  debug: false,           // ?debug in the URL
+  speedMul: 1,            // walk-speed multiplier (debug and free viewing only)
   field: null, backdrop: null, routes: null, camps: null, world: null, weather: null,
 };
+
+function freshStats(seed) {
+  return {
+    seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
+    o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
+    summits: { everest: false, lhotse: false }, summitTimes: {}, summitNoO2: {},
+    usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(game.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
+    visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
+  };
+}
 
 export function newGame(seed, { free = false } = {}) {
   const g = game;
   resetDebrief();
   g.free = free;
-  g.S = {
-    seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
-    o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
-    summits: { everest: false, lhotse: false }, summitTimes: {}, summitNoO2: {},
-    usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(g.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
-    visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
-  };
+  g.S = freshStats(seed);
   g.time = START_TIME_H;
   g.weather = new Weather(seed);
   const m = g.routes.main, a = m.at(m.s('ebc') + 20), b = m.at(m.s('ebc') + 60);
-  Object.assign(g.P, { x: a.x - a.dz * 4, z: a.z + a.dx * 4, falling: null, clipped: -1, onLadder: false, routeHint: -1 });
+  Object.assign(g.P, { x: a.x - a.dz * 4, z: a.z + a.dx * 4, falling: null, clipped: -1, onLadder: false, routeHint: -1, ski: null });
   g.P.y = g.field.height(g.P.x, g.P.z);
   g.view.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z)); g.P.facing = g.view.yaw; g.view.pitch = -0.1;
   g.S.maxAlt = g.P.y;
@@ -211,7 +217,7 @@ export function load() {
   const d = readSave();
   if (!d) return false;
   game.S = d.S; game.S.stock.ebc = Infinity;       // JSON stores Infinity as null
-  Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1 });
+  Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1, ski: null });
   game.P.y = game.field.height(game.P.x, game.P.z);
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
   game.weather = new Weather(game.S.seed);
@@ -253,10 +259,38 @@ export function enterFreeViewing() {
   toast('Free viewing: teleport anywhere with T, survival systems are off. Your saved expedition is kept.', 'info', 7);
 }
 
+/**
+ * Leave free viewing where you stand and climb on from there for real: a fresh expedition at this spot, with
+ * the acclimatization of a climber who did the rotations and oxygen on if you are high. The old save is
+ * kept until you next rest or save at a camp.
+ */
+export function exitFreeViewing() {
+  if (!game.free) return;
+  const { P } = game;
+  game.free = false; game.auto = null; game.weather.clear = false;
+  const S = game.S = freshStats(game.S.seed);
+  S.accl = clamp(P.y - 600, 5200, 7000);
+  if (P.y > 7000) S.o2on = true;
+  S.spo2 = spo2Target(S, P.y, 0); S.maxAlt = P.y;
+  S.visited = Object.fromEntries(game.camps.filter((c) => c.id === 'ebc' || c.elevation < P.y - 50).map((c) => [c.id, true]));
+  resetDebrief();
+  refreshConditions();
+  recordSample(game, false, true);
+  toast(`Expedition on from ${region()} at ${fmt(P.y)} m — survival systems are back on${S.o2on ? ', oxygen flowing at 2 L/min' : ''}.`, 'warn', 7);
+}
+
+/** Walk-speed multiplier for debugging; it applies in free viewing and with ?debug only. */
+export const speedFactor = () => (game.free || game.debug ? game.speedMul : 1);
+export function setSpeedMul(m) {
+  game.speedMul = clamp(m, 0.25, 32);
+  toast(`Walk speed ×${game.speedMul}${game.free || game.debug ? '' : ' (applies in free viewing or with ?debug)'}`, 'info', 2);
+}
+
 /** Move the climber somewhere new, clearing everything tied to the old position (rope, autopilot, fall). */
 export function placePlayer(x, z, yaw) {
   const { P, view } = game;
   Object.assign(P, { x, z, falling: null, clipped: -1, ropeHint: -1, onLadder: false, routeHint: -1, moving: false });
+  if (P.ski) Object.assign(P.ski, { u: 0, w: 0, speed: 0 });
   P.y = game.field.height(x, z);
   if (yaw !== undefined) { view.yaw = yaw; P.facing = yaw; }
   game.auto = null;

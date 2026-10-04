@@ -1,0 +1,4 @@
+[{"click":"#btnNew"},{"wait":300},
+ {"script":"tests/extras.js","expect":"r.speedKey === 4 && r.speedRatio > 3.5 && r.speedRatio < 4.5 && /Walk speed ×4/.test(r.pill) && r.exit.mode === 'play' && r.exit.free === false && r.exit.moved < 0.01 && r.exit.o2 && r.exit.c3 && r.afterExit.mode === 'play' && r.afterExit.health > 90 && r.skisOn && r.ski.drop > 100 && r.ski.vmaxKmh > 40 && r.ski.mode === 'play' && r.ski.pill && r.autopilotRefused && r.skisOff"},
+ {"eval":"(() => { const g = __sim.game, c2 = g.camps.find((c) => c.id === 'c2'); __sim.teleport(c2.x + 40, c2.z + 40); __sim.toggleSkis(); g.view.dist = 3.5; g.view.pitch = -0.25; g.view.yaw = g.P.facing + 1.3; return !!g.P.ski; })()"},
+ {"wait":6000},{"shot":"skis.png"}]

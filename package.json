@@ -2,7 +2,7 @@
   "name": "everest-south-col-expedition",
   "version": "2.1.0",
   "private": true,
-  "description": "Browser mountaineering simulator of the Everest–Lhotse massif on the real Copernicus GLO-30 terrain (Three.js).",
+  "description": "Browser mountaineering simulator of the Everest–Lhotse massif on the 4 m Pléiades terrain (Three.js).",
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -12,9 +12,12 @@
     "start:offline": "node -e \"console.log('Open http://localhost:8080/?localthree (three.js served from node_modules)')\" && http-server -c-1 -p 8080 .",
     "lint": "eslint .",
     "test:unit": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/debrief.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json",
+    "test:e2e": "node tests/harness.mjs tests/terrain.json && node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/debrief.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/extras.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json",
     "test": "npm run test:unit && npm run test:e2e",
-    "build-assets": "node tools/run-python.mjs tools/build_assets.py --dem ./dem"
+    "build-assets": "node tools/run-python.mjs tools/build_pleiades_assets.py",
+    "build-assets:copernicus": "node tools/run-python.mjs tools/build_assets.py --dem ./dem",
+    "test:terrain": "node tools/run-python.mjs -m unittest discover -s tests/python -v",
+    "verify:terrain": "node tools/run-python.mjs tools/verify_pleiades_assets.py"
   },
   "devDependencies": {
     "eslint": "10.1.0",
