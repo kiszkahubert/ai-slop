@@ -113,12 +113,13 @@ ES modules and the terrain files must be served over HTTP. Opening `index.html` 
 
 ```bash
 npm install              # dev tools: http-server, three (for offline use), Playwright, ESLint
-npm start                # serves the folder on http://localhost:8080
-# or, without npm: python3 -m http.server 8080   (Windows: python -m http.server 8080)
+npm start                # serves the folder on http://localhost:8000
+npm start -- 3000        # on another port (or PORT=3000 npm start)
+# or, without npm: python3 -m http.server 8000   (Windows: python -m http.server 8000)
 ```
 
-Then open <http://localhost:8080>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
-offline, open <http://localhost:8080/?localthree> instead, which uses the copy installed in `node_modules`.
+Then open <http://localhost:8000>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
+offline, open <http://localhost:8000/?localthree> instead, which uses the copy installed in `node_modules`.
 
 ## Controls
 
@@ -221,8 +222,7 @@ node tests/harness.mjs tests/hazards.json   # a single e2e suite
 
 The e2e harness serves three.js from `node_modules` when it is installed (override with `THREE_DIR`), so it runs
 offline. Software (SwiftShader) rendering makes screenshots slow, so each one may take up to `SHOT_TIMEOUT` ms
-(default 120000). GitHub Actions runs lint, the unit and Python terrain tests, then the e2e suites, on every push and pull request
-(`.github/workflows/ci.yml`).
+(default 120000). There is no CI: run `npm run lint` and `npm test` before pushing.
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
 must end with a win. The hazard tests check three things:
