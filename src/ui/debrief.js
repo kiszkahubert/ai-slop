@@ -7,7 +7,7 @@ import { buildDebrief } from '../sim/debrief.js';
 import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const $ = (id) => document.getElementById(id);
-const ICONS = { camp: '▣', summit: '▲', death: '✝', win: '✔', fall: '✕', bottle: '◯', o2: 'O₂', rest: '…', start: '▶' };
+const ICONS = { camp: '▣', summit: '▲', death: '✝', win: '✔', fall: '✕', bottle: '◯', o2: 'O₂', rest: '…', start: '▶', checkpoint: '⚑' };
 let current = null, hover = -1, layout = null;
 
 export function renderDebrief() {

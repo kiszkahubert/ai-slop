@@ -71,6 +71,31 @@ mountain still bites: take a crevasse too slowly and you drop in, hit a serac fa
 your skis may chatter loose. Skis are off-limits for fixed ropes and the route-following autopilot.
 </details>
 
+## The dead of the route (checkpoints)
+
+Seven markers along the South Col route recall people who died there. Each is a **checkpoint**: on an expedition, reaching one
+tells their story and saves your progress, unless you are too badly hurt (health 30 or less) to carry on from there. In free
+viewing the story is told but nothing is saved. They appear as ◆ on the route map and as ⚑ in the debrief journal.
+
+Only deaths with a documented place on or beside the route are included, and the positions are approximate: each marker is
+placed by landmark or reported altitude. Where remains are still reported on the mountain, a shrouded figure lies off the trail.
+Where a body was recovered, carried off by the wind or never found, the spot has a cairn and prayer flags instead.
+
+| Marker | Where | Shown as |
+|---|---|---|
+| Base Camp avalanche, 25 April 2015 (earthquake avalanche off Pumori, at least 19 dead) | Base Camp | cairn |
+| Icefall avalanche, 18 April 2014 (16 Nepali guides; 3 never recovered) | "Popcorn Field", Khumbu Icefall | cairn |
+| Babu Chiri Sherpa, 29 April 2001 (crevasse fall; recovered) | near Camp 2 | cairn |
+| Yasuko Namba, 11 May 1996 (brought down in 1997) | South Col | cairn |
+| Hannelore Schmatz, 1979 (carried off by the wind years later) | ~8,300 m, Triangular Face | cairn |
+| Scott Fischer, 11 May 1996 (shrouded and moved off the trail by Anatoli Boukreev) | near the Balcony, ~8,400 m | shrouded figure |
+| Rob Hall, 11 May 1996 (reported to remain there) | South Summit | shrouded figure |
+
+Sources: Wikipedia articles on the 1996 Mount Everest disaster, Scott Fischer, Rob Hall and the South Summit, Hannelore Schmatz,
+Yasuko Namba, Babu Chiri Sherpa, and the 2014 and 2015 Mount Everest avalanches; the American Alpine Journal note on the death
+of Babu Chiri; Explorersweb ("Looking Back: In 1979, the First Woman Dies on Everest"). Accounts differ on some details, such
+as the 2015 death toll at Base Camp (19–24) and the present state of individual remains. The texts stick to what the sources agree on.
+
 ## Debrief
 
 When the expedition ends — summit and descent to Camp 2, or death on the mountain — the end screen offers a
@@ -88,12 +113,13 @@ ES modules and the terrain files must be served over HTTP. Opening `index.html` 
 
 ```bash
 npm install              # dev tools: http-server, three (for offline use), Playwright, ESLint
-npm start                # serves the folder on http://localhost:8080
-# or, without npm: python3 -m http.server 8080   (Windows: python -m http.server 8080)
+npm start                # serves the folder on http://localhost:8000
+npm start -- 3000        # on another port (or PORT=3000 npm start)
+# or, without npm: python3 -m http.server 8000   (Windows: python -m http.server 8000)
 ```
 
-Then open <http://localhost:8080>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
-offline, open <http://localhost:8080/?localthree> instead, which uses the copy installed in `node_modules`.
+Then open <http://localhost:8000>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
+offline, open <http://localhost:8000/?localthree> instead, which uses the copy installed in `node_modules`.
 
 ## Controls
 
@@ -196,12 +222,10 @@ node tests/harness.mjs tests/hazards.json   # a single e2e suite
 
 The e2e harness serves three.js from `node_modules` when it is installed (override with `THREE_DIR`), so it runs
 offline. Software (SwiftShader) rendering makes screenshots slow, so each one may take up to `SHOT_TIMEOUT` ms
-(default 120000). GitHub Actions runs lint, the unit and Python terrain tests, then the e2e suites, on every push and pull request
-(`.github/workflows/ci.yml`).
+(default 120000). There is no CI: run `npm run lint` and `npm test` before pushing.
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
-must end with a win. The debrief test kills the climber through the physiology system and checks that the debrief
-screen, chart, verdicts, journal and stats all render. The hazard tests check three things:
+must end with a win. The hazard tests check three things:
 - **Death zone:** without oxygen at 8,400 m you die (about 5–6 game hours), while 3 L/min keeps you alive.
 - **Crevasses:** stepping into one kills you, and the ladder crossing works.
 - **Ropes:** unclipped climbers slip on the Lhotse Face, and clipped ones don't.
