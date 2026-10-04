@@ -1,0 +1,9 @@
+[{"click": "#btnNew"},
+ {"wait": 300},
+ {"script": "tests/memorials.js", "expect": "r.placed.length === 7 && r.babuchiri.reached && r.babuchiri.savedHere && r.babuchiri.inSave && r.babuchiri.story && r.namba.reached && r.namba.saveKept && r.free.story && r.free.saveKept"},
+ {"eval": "(() => { const g = __sim.game, F = g.field, m = g.world.memorials.find((q) => q.id === 'hall'); let best = null; for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, x = m.x + Math.cos(a) * 8, z = m.z + Math.sin(a) * 8, y = F.height(x, z); if (!best || y < best.y) best = { x, z, y }; } __sim.teleport(best.x, best.z); const d = Math.hypot(m.x - best.x, m.z - best.z); g.view.yaw = Math.atan2(-(m.x - best.x), -(m.z - best.z)); g.view.pitch = Math.atan2(m.y - best.y - 1.2, d) - 0.1; g.view.dist = 4; return Math.round(m.y); })()"},
+ {"wait": 6000},
+ {"shot": "memorial_hall.png"},
+ {"eval": "(() => { const g = __sim.game, F = g.field, m = g.world.memorials.find((q) => q.id === 'schmatz'); let best = null; for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, x = m.x + Math.cos(a) * 8, z = m.z + Math.sin(a) * 8, y = F.height(x, z); if (!best || y < best.y) best = { x, z, y }; } __sim.teleport(best.x, best.z); const d = Math.hypot(m.x - best.x, m.z - best.z); g.view.yaw = Math.atan2(-(m.x - best.x), -(m.z - best.z)); g.view.pitch = Math.atan2(m.y - best.y - 1.2, d) - 0.1; g.view.dist = 4; return Math.round(m.y); })()"},
+ {"wait": 6000},
+ {"shot": "memorial_schmatz.png"}]

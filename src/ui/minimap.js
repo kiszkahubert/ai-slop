@@ -45,6 +45,10 @@ export class Minimap {
       g.fillStyle = '#ffd166'; g.strokeStyle = '#000'; g.lineWidth = 2; g.beginPath(); g.arc(a, b, 5, 0, 7); g.fill(); g.stroke();
       label(c.short, a + 7, b + 4);
     }
+    for (const m of this.game.world.memorials || []) {        // memorial checkpoints
+      const [a, b] = this.toPx(m.x, m.z);
+      g.fillStyle = '#d9dee5'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(a, b - 4); g.lineTo(a + 4, b); g.lineTo(a, b + 4); g.lineTo(a - 4, b); g.closePath(); g.fill(); g.stroke();
+    }
     for (const pk of PEAKS) {
       const [a, b] = this.toPx(pk.x, pk.z); if (a < 0 || a > W || b < 0 || b > H) continue;
       g.fillStyle = '#111'; g.beginPath(); g.moveTo(a, b - 7); g.lineTo(a - 6, b + 4); g.lineTo(a + 6, b + 4); g.fill();

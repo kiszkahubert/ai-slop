@@ -91,7 +91,7 @@ export class Environment {
     this.updateSnow(dt, ctx, w, day);
     for (const l of ctx.labels) {
       const d = l.position.distanceTo(camera.position);
-      l.material.opacity = clamp(1.25 - d / 4000, 0, 1) * (d < 30 ? 0 : 1);
+      l.material.opacity = clamp(1.25 - d / (l.userData.range || 4000), 0, 1) * (d < (l.userData.range ? 6 : 30) ? 0 : 1);
     }
     return el;
   }

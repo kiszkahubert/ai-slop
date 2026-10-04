@@ -6,6 +6,7 @@ import { Weather } from './weather.js';
 import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyBottle, spo2Target } from './physiology.js';
 import { resetDebrief, recordSample } from './debrief.js';
 import { LANDMARKS, regionName, CLIMBS, reachedSummits } from '../world/route.js';
+import { CHECKPOINT_RADIUS } from '../world/memorials.js';
 
 const SAVE_KEY = 'everestSim.v2.save';
 
@@ -29,7 +30,7 @@ function freshStats(seed) {
     o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
     summits: Object.fromEntries(CLIMBS.map((c) => [c.id, false])), summitTimes: {}, summitNoO2: {},
     usedO2InDZ: false, usedO2Above7000: false, deathZoneHours: 0, stock: Object.fromEntries(game.camps.map((c) => [c.id, c.stock])),   // Base Camp: Infinity
-    visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
+    visited: { ebc: true }, landmarks: {}, checkpoints: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
   };
 }
 
@@ -72,6 +73,7 @@ export function die(cause) {
 export function checkProgress() {
   const { S, P, routes } = game;
   if (P.y > S.maxAlt) S.maxAlt = P.y;
+  checkMemorials();
   if (game.free) return;            // free viewing: no landmarks, summits or win
   if (P.y > 7000 && o2Flowing(S)) S.usedO2Above7000 = true;
   for (const route of Object.values(routes)) for (const [tag, i] of Object.entries(route.tags)) {
@@ -104,6 +106,31 @@ export function checkProgress() {
   const n = reachedSummits(S).length;
   if (n > S.winShownFor && Math.hypot(c2.x - P.x, c2.z - P.z) < 35) {
     S.winShownFor = n; game.mode = 'won'; game.auto = null; emit('win');
+  }
+}
+
+/**
+ * The dead of the route are checkpoints: passing one tells their story and, on a real expedition, saves progress
+ * there unless you are in no state to carry on from it.
+ */
+const seenInFreeView = new Set();
+const story = (m) => (m.text.startsWith(m.title) ? m.text : `${m.title} — ${m.text}`);
+function checkMemorials() {
+  const { S, P } = game, list = game.world?.memorials || [];
+  for (const m of list) {
+    if (Math.hypot(m.x - P.x, m.z - P.z) > CHECKPOINT_RADIUS) continue;
+    if (game.free) {
+      if (!seenInFreeView.has(m.id)) { seenInFreeView.add(m.id); toast(story(m), 'memorial', 14); }
+      continue;
+    }
+    S.checkpoints ||= {};
+    if (S.checkpoints[m.id]) continue;
+    S.checkpoints[m.id] = true;
+    const canSave = !P.falling && S.health > 30 && game.mode === 'play';
+    toast(story(m), 'memorial', 14);
+    emit('checkpoint', m);
+    if (canSave) { save(true); toast(`Checkpoint ${Object.keys(S.checkpoints).length}/${list.length} — progress saved.`, 'good', 4); }
+    else toast('Checkpoint reached, but you are in no state to save here.', 'warn', 4);
   }
 }
 

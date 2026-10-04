@@ -53,6 +53,7 @@ on('o2', (isOn, flow) => {
   else if (flow !== last.flow) note('o2', `Oxygen flow set to ${flow} L/min`);
   debrief.lastO2 = { on: isOn, flow };
 });
+on('checkpoint', (m) => note('checkpoint', `Passed ${m.title} · ${fmt(m.y)} m`, { y: m.y }));
 on('rest', (hours, where) => note('rest', `Rested ${hours} h${where ? ' at ' + where : ''}`));
 
 // ---------------- analysis

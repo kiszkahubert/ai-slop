@@ -71,6 +71,31 @@ mountain still bites: take a crevasse too slowly and you drop in, hit a serac fa
 your skis may chatter loose. Skis are off-limits for fixed ropes and the route-following autopilot.
 </details>
 
+## The dead of the route (checkpoints)
+
+Seven markers along the South Col route recall people who died there. Each is a **checkpoint**: on an expedition, reaching one
+tells their story and saves your progress, unless you are too badly hurt (health 30 or less) to carry on from there. In free
+viewing the story is told but nothing is saved. They appear as ◆ on the route map and as ⚑ in the debrief journal.
+
+Only deaths with a documented place on or beside the route are included, and the positions are approximate: each marker is
+placed by landmark or reported altitude. Where remains are still reported on the mountain, a shrouded figure lies off the trail.
+Where a body was recovered, carried off by the wind or never found, the spot has a cairn and prayer flags instead.
+
+| Marker | Where | Shown as |
+|---|---|---|
+| Base Camp avalanche, 25 April 2015 (earthquake avalanche off Pumori, at least 19 dead) | Base Camp | cairn |
+| Icefall avalanche, 18 April 2014 (16 Nepali guides; 3 never recovered) | "Popcorn Field", Khumbu Icefall | cairn |
+| Babu Chiri Sherpa, 29 April 2001 (crevasse fall; recovered) | near Camp 2 | cairn |
+| Yasuko Namba, 11 May 1996 (brought down in 1997) | South Col | cairn |
+| Hannelore Schmatz, 1979 (carried off by the wind years later) | ~8,300 m, Triangular Face | cairn |
+| Scott Fischer, 11 May 1996 (shrouded and moved off the trail by Anatoli Boukreev) | near the Balcony, ~8,400 m | shrouded figure |
+| Rob Hall, 11 May 1996 (reported to remain there) | South Summit | shrouded figure |
+
+Sources: Wikipedia articles on the 1996 Mount Everest disaster, Scott Fischer, Rob Hall and the South Summit, Hannelore Schmatz,
+Yasuko Namba, Babu Chiri Sherpa, and the 2014 and 2015 Mount Everest avalanches; the American Alpine Journal note on the death
+of Babu Chiri; Explorersweb ("Looking Back: In 1979, the First Woman Dies on Everest"). Accounts differ on some details, such
+as the 2015 death toll at Base Camp (19–24) and the present state of individual remains. The texts stick to what the sources agree on.
+
 ## Debrief
 
 When the expedition ends — summit and descent to Camp 2, or death on the mountain — the end screen offers a

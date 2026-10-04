@@ -5,6 +5,7 @@ import { fmt } from '../core/math.js';
 import { makeNoise2D, mulberry32 } from '../core/noise.js';
 import { ropeDefs, CLIMBS } from './route.js';
 import { routeCrevasse } from './routeHazards.js';
+import { placeMemorials } from './memorials.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -195,6 +196,7 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
   cornice(scene, field, m, m.s('southsummit'), hs);
 
   finish(tents, mess, bottles, poles, flags, rungs, seracs, rocks);
+  world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
   return world;
 }
 
@@ -276,6 +278,29 @@ function cornice(scene, field, route, s0, s1) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xf2f6fb, roughness: 0.7, side: THREE.DoubleSide }));
   mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+}
+
+// The dead of the route (see memorials.js): a cairn with prayer flags, or a shrouded figure off the trail where the
+// remains are reported to lie. Labels only show from close by.
+function memorials(scene, field, list, r, world) {
+  const stone = new THREE.MeshStandardMaterial({ color: 0x5f5850, roughness: 0.95 }), snow = new THREE.MeshStandardMaterial({ color: 0xf2f5f8, roughness: 0.9 });
+  const shroud = [new THREE.MeshStandardMaterial({ color: 0x6d7f8f, roughness: 0.95 }), new THREE.MeshStandardMaterial({ color: 0x8a6a4f, roughness: 0.95 })];
+  const rockGeo = new THREE.DodecahedronGeometry(1, 0), bodyGeo = new THREE.CapsuleGeometry(0.26, 1.35, 4, 10), driftGeo = new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  list.forEach((m, k) => {
+    const g = new THREE.Group(); g.position.set(m.x, m.y, m.z); g.rotation.y = m.heading; scene.add(g);
+    const mesh = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+    if (m.kind === 'body') {
+      const b = mesh(bodyGeo, shroud[k % 2], 0, 0.2, 0); b.rotation.set(0, r() * 0.6 - 0.3, Math.PI / 2);
+      mesh(driftGeo, snow, 0.3, -0.05, 0.12).scale.set(1.25, 0.32, 0.55);
+      mesh(rockGeo, stone, -1.3, 0.15, 0.25).scale.set(0.32, 0.28, 0.3);
+    } else {
+      let y = 0;
+      for (let i = 0; i < 6; i++) { const sz = 0.55 - i * 0.07; const o = mesh(rockGeo, stone, (r() - 0.5) * 0.12, y + sz * 0.6, (r() - 0.5) * 0.12); o.scale.setScalar(sz); o.rotation.set(r() * 3, r() * 3, r() * 3); y += sz * 0.95; }
+    }
+    prayerFlags(scene, field, m.x + Math.cos(m.heading) * 1.6, m.y + 1, m.z - Math.sin(m.heading) * 1.6, 3, 5, 2.2, r);
+    const l = makeLabel(scene, m.title, fmt(m.y) + ' m'); l.position.set(m.x, m.y + 6, m.z); l.userData.range = 450; world.labels.push(l);
+  });
+  return list;
 }
 
 function prayerFlags(scene, field, x, y, z, lines, length, height, r) {
