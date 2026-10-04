@@ -1,0 +1,11 @@
+[{"click":"#btnNew"},{"wait":500},
+ {"eval":"const R=__sim.game.routes.main,p=R.point('c4');__sim.teleport(p.x+2,p.z+2);__sim.interact();__sim.game.mode"},
+ {"wait":800},{"shot":"ui_camp.png"},
+ {"eval":"const c=(a)=>document.querySelector(`[data-act=${a}]`).click();const g=__sim.game;c('take');c('take');const t1=g.S.tanks.length;c('leave');const t2=g.S.tanks.length;c('o2');document.querySelector('[data-act=rest][data-h=\"6\"]').click();const r={t1,t2,o2:g.S.o2on,time:g.time.toFixed(1),saved:!!localStorage.getItem('everestSim.v2.save')};c('leave-camp');r.mode=g.mode;r"},
+ {"key":"Escape"},{"wait":700},{"eval":"__sim.game.mode"},
+ {"click":"#btnLoadSave"},{"wait":500},{"eval":"({mode:__sim.game.mode,y:Math.round(__sim.game.P.y)})"},
+ {"eval":"const g=__sim.game,R=g.routes.main;__sim.teleport(R.pts.at(-1).x,R.pts.at(-1).z);__sim.simStep(1/30,{dx:0,dz:0});const c2=R.point('c2');__sim.teleport(c2.x,c2.z);__sim.simStep(1/30,{dx:0,dz:0});g.mode"},
+ {"wait":800},{"shot":"ui_win.png"},
+ {"click":"#btnWinContinue"},{"wait":300},
+ {"eval":"const g=__sim.game,b=g.routes.main.point('balcony');__sim.teleport(b.x,b.z);g.S.o2on=false;let t=0;while(t<3000&&__sim.simStep(0.1,{dx:0,dz:0}))t+=0.1;({mode:g.mode,cause:g.S.cause})"},
+ {"wait":1500},{"shot":"ui_dead.png"}]

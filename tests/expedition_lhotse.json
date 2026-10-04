@@ -1,0 +1,1 @@
+[{"click":"#btnNew"},{"wait":300},{"eval":"window.__target='lhotse';0"},{"script":"tests/expedition.js","expect":"r.won === true"}]

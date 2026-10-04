@@ -1,0 +1,15 @@
+{
+  "name": "everest-south-col-expedition",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Browser mountaineering simulator of the Everest–Lhotse massif on the real Copernicus GLO-30 terrain (Three.js).",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json",
+    "build-assets": "python3 tools/build_assets.py --dem ./dem"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

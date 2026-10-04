@@ -1,0 +1,4 @@
+[{"click":"#btnFree"},{"wait":800},{"click":"[data-act=tp][data-id=everest]"},{"wait":2500},{"shot":"free_everest.png"},
+ {"key":"KeyT"},{"wait":800},{"eval":"({mode:__sim.game.mode, panel:!!document.querySelector('#scrCamp:not(.hidden) [data-act=tp]')})"},{"shot":"free_panel.png"},
+ {"click":"[data-act=hour][data-h=\"18.6\"]"},{"click":"[data-act=clear][data-on=\"1\"]"},{"click":"[data-act=tp][data-id=c2]"},{"wait":2500},{"shot":"free_c2_sunset.png"},
+ {"eval":"({mode:__sim.game.mode, y:Math.round(__sim.game.P.y), hour:(__sim.game.time%24).toFixed(1), clear:__sim.game.weather.clear})"}]

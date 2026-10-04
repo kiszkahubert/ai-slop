@@ -1,0 +1,63 @@
+// Headless test harness: serves the project over HTTP and drives it with Playwright.
+//
+//   node tests/harness.mjs tests/smoke.json            # run a list of actions
+//
+// Environment:
+//   THREE_DIR    path to a local three@0.160.0 package (used instead of the CDN when set)
+//   CHROMIUM     path to a Chromium binary (default: Playwright's)
+//   SHOTS        directory for screenshots (default: tests/out)
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const { chromium } = await import(process.env.PLAYWRIGHT || 'playwright');
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
+
+const server = http.createServer((req, res) => {
+  let p = path.join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+  if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
+  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); res.end(); return; }
+  res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream' });
+  fs.createReadStream(p).pipe(res);
+});
+await new Promise((r) => server.listen(0, r));
+const port = server.address().port;
+
+const actions = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const shots = process.env.SHOTS || path.join(root, 'tests', 'out');
+fs.mkdirSync(shots, { recursive: true });
+const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM || undefined,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
+const page = await browser.newPage({ viewport: { width: Number(process.env.W || 1280), height: Number(process.env.H || 720) } });
+const errors = [];
+page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); console.log(`[${m.type()}]`, m.text()); });
+page.on('pageerror', (e) => { errors.push(e.message); console.log('[pageerror]', e.message); });
+if (process.env.THREE_DIR) {
+  await page.route('https://cdn.jsdelivr.net/npm/three@0.160.0/**', (r) => {
+    const rel = new URL(r.request().url()).pathname.replace('/npm/three@0.160.0/', '');
+    r.fulfill({ path: path.join(process.env.THREE_DIR, rel), contentType: 'text/javascript' });
+  });
+}
+await page.goto(`http://localhost:${port}/${process.env.Q || '?debug'}`);
+await page.waitForFunction(() => window.__sim && window.__sim.game.mode === 'title', null, { timeout: 180000 });
+for (const a of actions) {
+  if (a.click) await page.click(a.click);
+  if (a.eval) { const r = await page.evaluate(a.eval); if (r !== undefined) console.log('[eval]', JSON.stringify(r)); }
+  if (a.script) {
+    const src = fs.readFileSync(path.resolve(root, a.script), 'utf8');
+    const r = await page.evaluate(`(async () => { ${src}\n })()`);
+    console.log('[script]', JSON.stringify(r, null, 1));
+    if (a.expect && !new Function('r', `return (${a.expect});`)(r)) { errors.push('expectation failed: ' + a.expect); }
+  }
+  if (a.key) { await page.keyboard.down(a.key); await page.waitForTimeout(a.hold || 50); await page.keyboard.up(a.key); }
+  if (a.wait) await page.waitForTimeout(a.wait);
+  if (a.shot) await page.screenshot({ path: path.join(shots, a.shot) });
+}
+await browser.close();
+server.close();
+if (errors.length) { console.log(`FAILED: ${errors.length} error(s)`); process.exit(1); }
+console.log('OK');
