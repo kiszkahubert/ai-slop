@@ -200,8 +200,7 @@ offline. Software (SwiftShader) rendering makes screenshots slow, so each one ma
 (`.github/workflows/ci.yml`).
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
-must end with a win. The debrief test kills the climber through the physiology system and checks that the debrief
-screen, chart, verdicts, journal and stats all render. The hazard tests check three things:
+must end with a win. The hazard tests check three things:
 - **Death zone:** without oxygen at 8,400 m you die (about 5–6 game hours), while 3 L/min keeps you alive.
 - **Crevasses:** stepping into one kills you, and the ladder crossing works.
 - **Ropes:** unclipped climbers slip on the Lhotse Face, and clipped ones don't.
