@@ -1,5 +1,15 @@
 # Everest · South Col Expedition
 
+<p align="center">
+  <img src="assets/ai-slop-badge.png" alt="This is a certified AI SLOP" width="480">
+</p>
+
+> **Certified AI slop.** This simulator was vibecoded by a large language model that has never been above sea level
+> and believes "acclimatization" is an Italian appetizer. The Copernicus elevation model is real, surveyed and
+> serious; everything wrapped around it was hallucinated and shipped without a human checking
+> whether the crevasses are load-bearing. The mountain is real. The code is vibecoded slop. If it kills you, that's a
+> feature.
+
 A browser mountaineering simulator of the Everest–Lhotse massif, built with Three.js (r160, loaded from the jsDelivr CDN).
 
 The mountain is real. The terrain is the **Copernicus GLO-30** elevation model at true scale: 15.4 × 11.5 km around
@@ -86,6 +96,7 @@ src/
 assets/
   terrain/core.png, backdrop.png, meta.json   heights as RGB (h = (R·256 + G) / 4 m), B = glacier mask
   route.json                                  generated route paths and waypoint tags
+  ai-slop-badge.png                           badge above, vibecoded like the rest of it
 tools/                asset pipeline (Python)
 tests/                Playwright harness + gameplay tests
 ```
