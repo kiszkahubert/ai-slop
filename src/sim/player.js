@@ -7,18 +7,19 @@ import { crevasseLocal } from '../world/props.js';
 import { SegmentIndex } from '../core/spatial.js';
 import { game, die, nearCamp, region, speedFactor } from './game.js';
 import { hypF, maxStamina, packLoad } from './physiology.js';
+import { CLIMBS } from '../world/route.js';
 
 // ---------------- fixed ropes
 let ropeIndex = null, ropeIndexFor = null;
 /** Nearest fixed rope (spatial index over all rope segments). maxDist bounds the search. */
-export function nearestRope(x, z, exclude = -1, maxDist = 400) {
+export function nearestRope(x, z, exclude = -1, maxDist = 400, route = null) {
   const ropes = game.world.ropes;
   if (ropeIndexFor !== ropes) {
     const segs = [];
     ropes.forEach((rope, ri) => { for (let i = 0; i < rope.pts.length - 1; i++) segs.push({ ax: rope.pts[i].x, az: rope.pts[i].z, bx: rope.pts[i + 1].x, bz: rope.pts[i + 1].z, rope: ri, i }); });
     ropeIndex = new SegmentIndex(segs, 40); ropeIndexFor = ropes;
   }
-  const h = ropeIndex.nearest(x, z, maxDist, exclude >= 0 ? (s) => s.rope !== exclude : null);
+  const h = ropeIndex.nearest(x, z, maxDist, (s) => s.rope !== exclude && (!route || ropes[s.rope].route === route));
   if (!h) return { d: 1e9, rope: -1, i: 0, px: 0, pz: 0 };
   const s = ropeIndex.segs[h.k];
   return { d: h.d, rope: s.rope, i: s.i, px: h.px, pz: h.pz };
@@ -72,19 +73,21 @@ export function interact() {
 
 // ---------------- autopilot: follow the marked route, clipping into ropes, at FAST_FORWARD speed
 /** F: follow the route, stopping at camps. Shift+F (nonstop): only stop at the end of the route. */
-export function startAutopilot({ nonstop = false } = {}) {
+export function startAutopilot({ nonstop = false, routeName = null, direction = null } = {}) {
   const { P, routes, view } = game;
   if (P.ski) { toast('Take your skis off [X] to follow the route.', 'warn', 3); return false; }
   const fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw);
-  // pick the route you are on - at the Yellow Band junction, the one you are facing
+  // Pick the route you are on; at a junction, favour the branch you are facing.
   let best = null;
-  for (const route of [routes.main, routes.lhotse]) {
+  for (const route of Object.values(routes)) {
+    if (routeName && route.name !== routeName) continue;
     const n = route.nearestWithin(P.x, P.z, 40);
     if (!n) continue;
     const a = route.at(n.s), dot = fx * a.dx + fz * a.dz;
     let dir = dot >= 0 ? 1 : -1;
+    if (direction === 1 || direction === -1) dir = direction;
     if ((dir < 0 && n.s < 3) || (dir > 0 && n.s > route.L - 3)) dir = -dir;      // at an end, the only way is back
-    const score = n.d - 10 * Math.abs(dot) - (route === routes.lhotse && dir > 0 && n.s < 30 && dot > 0.3 ? 5 : 0);
+    const score = n.d - 10 * Math.abs(dot) - (route !== routes.main && dir > 0 && n.s < 30 && dot > 0.3 ? 5 : 0);
     if (!best || score < best.score) best = { route, n, dir, score };
   }
   if (!best) { toast('Too far from the marked route to follow it — walk back to the wands first.', 'warn'); return false; }
@@ -110,10 +113,11 @@ function autopilotControl() {
   if (!A.nonstop && R === routes.main && A.dir > 0 && A.startS < R.s('yellowband') - 10 && s >= R.s('yellowband') - 3) {
     stopAutopilot('Yellow Band junction: left (on) to the Geneva Spur and South Col, or switch to the Lhotse ropes [E] for Lhotse.'); return null;
   }
-  if (A.dir > 0 && s >= R.L - 2) { stopAutopilot(R === routes.main ? 'You are on the summit ridge top.' : 'Top of the Lhotse route.'); return null; }
+  if (A.dir > 0 && s >= R.L - 2) { stopAutopilot(`Top of the ${CLIMBS.find((c) => c.route === R.name).short} route.`); return null; }
   if (A.dir < 0 && s <= 2) {
-    if (R === routes.lhotse) { // continue down the main route from the junction
-      const m = routes.main; game.auto = { ...A, route: m, startS: m.s('yellowband'), hint: m.tags.yellowband }; return null;
+    if (R !== routes.main) { // Continue down the main route from this branch's junction.
+      const m = routes.main, junction = CLIMBS.find((c) => c.route === R.name).junction;
+      game.auto = { ...A, route: m, startS: m.s(junction), hint: m.tags[junction] }; return null;
     }
     stopAutopilot('End of the route.'); return null;
   }
@@ -121,9 +125,10 @@ function autopilotControl() {
   if (S.winded || S.stamina < 3) A.resting = true;
   if (A.resting && S.stamina > Math.min(45, maxStamina(S) - 5)) A.resting = false;
   // clip into ropes on the way
-  if (P.clipped < 0) { const nr = nearestRope(P.x, P.z); if (nr.d < 4) clipTo(nr.rope); }
+  if (P.clipped >= 0 && game.world.ropes[P.clipped].route !== R) P.clipped = -1;
+  if (P.clipped < 0) { const nr = nearestRope(P.x, P.z, -1, 400, R); if (nr.d < 4) clipTo(nr.rope); }
   else {
-    const other = nearestRope(P.x, P.z, P.clipped);
+    const other = nearestRope(P.x, P.z, P.clipped, 400, R);
     if (other.d < 4) {
       const ahead = R.at(s + A.dir * 12), cur = game.world.ropes[P.clipped].pts;
       const curBest = Math.min(...cur.filter((_, k) => k % 4 === 0).map((q) => Math.hypot(q.x - ahead.x, q.z - ahead.z)));
@@ -183,7 +188,7 @@ export function updatePlayer(dt, ctl) {
     if (P.clipped >= 0) {
       const pr = ropeProject(P.clipped, nx, nz, P.ropeHint); P.ropeHint = pr.i;
       if (pr.end && pr.beyond > 2.5) {
-        const other = nearestRope(nx, nz, P.clipped);
+        const other = nearestRope(nx, nz, P.clipped, 400, game.auto?.route);
         if (other.d < 5) { clipTo(other.rope); toast(`Clipped over to the ${game.world.ropes[other.rope].name}.`); }
         else { toast(`End of the ${game.world.ropes[P.clipped].name} — unclipped.`); P.clipped = -1; }
       } else if (pr.d > MOVE.ropeLeash) {

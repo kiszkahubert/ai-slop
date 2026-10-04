@@ -157,9 +157,10 @@ function drawCompass() {
     g.fillStyle = col; g.beginPath(); g.moveTo(x, 34); g.lineTo(x - 5, 40); g.lineTo(x + 5, 40); g.fill();
     g.font = '10px system-ui'; g.fillText(label, x, ly); g.font = '12px system-ui';
   };
-  const ev = game.routes.main.pts.at(-1), lh = game.routes.lhotse.pts.at(-1);
+  const ev = game.routes.main.pts.at(-1), lh = game.routes.lhotse.pts.at(-1), nu = game.routes.nuptse.pts.at(-1);
   mark(ev.x, ev.z, '#ffd166', '▲ Everest', 24);
   mark(lh.x, lh.z, '#7cc8ff', '▲ Lhotse', 13);
+  mark(nu.x, nu.z, '#c46bff', '▲ Nuptse', 24);
   g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.fillText(Math.round(heading) + '°', W / 2, Hh - 1);
   g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, 16); g.stroke();
 }

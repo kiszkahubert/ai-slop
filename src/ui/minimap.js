@@ -1,6 +1,7 @@
 // Route map: a hillshade of the real terrain with the route, camps, summits and the climber.
 import { clamp, fmt } from '../core/math.js';
 import { PEAKS } from '../world/geo.js';
+import { CLIMBS } from '../world/route.js';
 
 const B = { x0: -7200, x1: 1400, z0: -1700, z1: 3300 };   // area shown (m)
 const W = 600, H = Math.round((W * (B.z1 - B.z0)) / (B.x1 - B.x0));
@@ -31,7 +32,8 @@ export class Minimap {
       img.data[o] = clamp(c[0] * k, 0, 255); img.data[o + 1] = clamp(c[1] * k, 0, 255); img.data[o + 2] = clamp(c[2] * k, 0, 255); img.data[o + 3] = 255;
     }
     g.putImageData(img, 0, 0);
-    for (const [route, col] of [[routes.main, '#ff4a2a'], [routes.lhotse, '#1fa8ff']]) {
+    for (const c of CLIMBS) {
+      const route = routes[c.route], col = c.mapColor;
       g.strokeStyle = col; g.lineWidth = 2.5; g.setLineDash([6, 4]); g.beginPath();
       route.pts.forEach((p, i) => { const [a, b] = this.toPx(p.x, p.z); i ? g.lineTo(a, b) : g.moveTo(a, b); });
       g.stroke();

@@ -10,21 +10,25 @@ const face = (route, s, dir) => { const a = route.at(s), b = route.at(s + dir * 
 const nearS = (route) => route.nearest(g.P.x, g.P.z).s;
 // follow the route until the autopilot stops itself; returns false if the climber died
 function follow(route, dir, maxSeconds = 4000, nonstop = false) {
+  const falls = g.S.falls;
   face(route, nearS(route), dir);
-  if (!W.startAutopilot({ nonstop })) return false;
+  if (!g.auto && !W.startAutopilot({ nonstop })) return false;
+  if (g.auto.route !== route || g.auto.dir !== dir) return false;
   let t = 0;
   while (g.auto && g.mode === 'play' && t < maxSeconds) {
     W.simStep(1 / 30, { dx: 0, dz: 0 }); t += 1 / 30;
     if (g.P.y > 7300 && !g.S.o2on && g.S.tanks.length) { g.S.flow = 3; g.S.o2on = true; }
   }
-  return g.mode === 'play' || g.mode === 'won';
+  if (g.auto) log.push(`autopilot timeout: route=${g.auto.route.name} s=${nearS(route).toFixed(1)} x=${g.P.x.toFixed(1)} z=${g.P.z.toFixed(1)} clipped=${g.P.clipped} grade=${g.P.grade.toFixed(2)} hint=${g.auto.hint}`);
+  return !g.auto && g.S.falls === falls && (g.mode === 'play' || g.mode === 'won');
 }
 const rest = (h, flow) => { if (flow) { g.S.flow = flow; g.S.o2on = true; } else g.S.o2on = false; const ok = W.restHours(h); stat(`rest ${h.toFixed(1)} h`); return ok; };
 const until = (hh) => ((hh - (g.time % 24)) + 24) % 24 || 24;
 const takeBottles = (camp, n) => { while (g.S.tanks.length < n && g.S.stock[camp] > 0) { g.S.stock[camp]--; g.S.tanks.push(300); } };
 
 g.S.tanks = [300, 300];
-for (const [camp, h] of [['c1', 0], ['c2', 16], ['c3', 10]]) {
+const camps = target === 'nuptse' ? [['c1', 0], ['c2', 24]] : [['c1', 0], ['c2', 16], ['c3', 10]];
+for (const [camp, h] of camps) {
   if (!follow(R.main, 1)) { stat('died'); return { log, cause: g.S.cause }; }
   stat('reach ' + camp);
   if (h && !rest(h)) return { log, cause: g.S.cause };
@@ -36,7 +40,7 @@ if (target === 'everest') {
   if (!rest(until(23), 1)) return { log, cause: g.S.cause };
   g.S.tanks.sort((a, b) => b - a);
   follow(R.main, 1); stat('summit push');
-} else {
+} else if (target === 'lhotse') {
   if (!follow(R.main, 1)) { stat('died'); return { log, cause: g.S.cause }; }           // C3 -> Yellow Band junction
   W.interact();                                                                         // clip over to the Lhotse ropes
   if (!follow(R.lhotse, 1)) { stat('died'); return { log, cause: g.S.cause }; }         // -> Lhotse Camp 4
@@ -44,11 +48,20 @@ if (target === 'everest') {
   if (!rest(until(23), 1)) return { log, cause: g.S.cause };
   g.S.tanks.sort((a, b) => b - a);
   follow(R.lhotse, 1); stat('summit push');
+} else {
+  takeBottles('c2', 3);
+  W.interact();
+  document.querySelector('[data-act=follow][data-route=nuptse]').click();
+  if (!follow(R.nuptse, 1)) { stat('died'); return { log, cause: g.S.cause }; }
+  stat('reach nuptse high camp'); takeBottles('nuptse_c3', 4);
+  if (!rest(16)) return { log, cause: g.S.cause };
+  g.S.tanks.sort((a, b) => b - a);
+  follow(R.nuptse, 1); stat('summit push');
 }
 if (g.mode !== 'play') return { log, cause: g.S.cause };
 // descend to Camp 2 in one go (Shift+F: non-stop; the win at Camp 2 ends it)
-const descent = target === 'lhotse' ? R.lhotse : R.main;
+const descent = target === 'everest' ? R.main : R[target];
 follow(descent, -1, 8000, true);
 log.push(`descent stops: ${g.mode === 'won' ? 'none (reached Camp 2 non-stop)' : 'stopped at ' + Math.round(g.P.y) + ' m'}`);
 stat('descent');
-return { log, cause: g.S.cause, summits: g.S.summits, won: g.mode === 'won' };
+return { log, cause: g.S.cause, summits: g.S.summits, won: g.mode === 'won', credited: !!g.S.summits[target], autoStopped: !g.auto };

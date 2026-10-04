@@ -3,6 +3,7 @@
 import { DEATH_ZONE, TURNAROUND_H } from '../config.js';
 import { on } from '../core/events.js';
 import { dayOf, fmt, timeOfDay } from '../core/math.js';
+import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const SAMPLE_STEP_H = 5 / 60;      // one sample per 5 game minutes
 const MAX_SAMPLES = 6000;          // ~20 game days of telemetry
@@ -38,7 +39,10 @@ function note(type, text, data = {}) {
   debrief.events.push({ t: debrief.t, type, text, ...data });
 }
 on('camp', (c) => note('camp', `Arrived at ${c.name} · ${fmt(c.elevation)} m`, { y: c.elevation, short: c.short }));
-on('summit', (name) => note('summit', name === 'everest' ? 'Summit — Mount Everest, 8,849 m' : 'Summit — Lhotse, 8,516 m'));
+on('summit', (id) => {
+  const c = CLIMBS.find((c) => c.id === id);
+  note('summit', `Summit — ${c.name}, ${fmt(c.e)} m`);
+});
 on('death', () => note('death', 'Expedition over'));
 on('win', () => note('win', 'Back at Camp 2, alive'));
 on('fall', (region, y) => note('fall', `Slipped on the ${region}`, { y }));
@@ -90,7 +94,7 @@ export function buildDebrief(game) {
   d.bottles = d.events.filter((e) => e.type === 'bottle');
   d.bottlesOut = d.bottles.length;
 
-  const v = d.verdicts, reached = S.summits.everest || S.summits.lhotse, both = S.summits.everest && S.summits.lhotse;
+  const v = d.verdicts, summits = reachedSummits(S), reached = summits.length > 0;
   if (reached) {
     if (d.lateH > 0.4) v.push({ sev: 'bad', text: `Turnaround: still above 8,000 m after 14:00 for ${dur(d.lateH)}${lastDZ ? ` (last at ${timeOfDay(lastDZ.t)} on Day ${dayOf(lastDZ.t)})` : ''}. The afternoon wind and a thinning oxygen budget are why the turnaround exists.` });
     else if (d.dzH > 0.4) v.push({ sev: 'good', text: 'Turnaround discipline: off the summit ridge before the 14:00 deadline.' });
@@ -109,7 +113,9 @@ export function buildDebrief(game) {
   if (d.bottlesOut >= 2) v.push({ sev: 'warn', text: `${d.bottlesOut} oxygen bottles drained. Stage and swap earlier so you never trade flow for fear of running dry.` });
   if (S.frost >= 20) v.push({ sev: S.frost >= 55 ? 'bad' : 'warn', text: `Frostbite risk reached ${Math.round(S.frost)}%. Wind chill, more than altitude, is what costs fingers.` });
   if (S.falls) v.push({ sev: 'warn', text: `${S.falls} slip${S.falls > 1 ? 's' : ''} on the mountain. Ropes and self-arrest are what kept this from being worse.` });
-  if (game.mode === 'won') v.push({ sev: 'good', text: both ? 'Double summit and a safe descent: Everest and Lhotse in one expedition.' : 'Summit and a safe descent to Camp 2 — the expedition succeeded.' });
+  if (game.mode === 'won') v.push({ sev: 'good', text: summits.length > 1
+    ? `${summits.map((c) => c.short).join(' + ')} and a safe descent to Camp 2 in one expedition.`
+    : 'Summit and a safe descent to Camp 2 — the expedition succeeded.' });
   const rank = { bad: 0, warn: 1, good: 2 };
   v.sort((a, bb) => rank[a.sev] - rank[bb.sev]);
   return d;

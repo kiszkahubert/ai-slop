@@ -9,7 +9,7 @@ globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null)
 const { game, newGame, save, load, campAction } = await import('../../src/sim/game.js');
 const { Route, campsFor } = await import('../../src/world/route.js');
 const data = JSON.parse(fs.readFileSync(new URL('../../assets/route.json', import.meta.url)));
-game.routes = { main: new Route('main', data.main), lhotse: new Route('lhotse', data.lhotse) };
+game.routes = Object.fromEntries(['main', 'lhotse', 'nuptse'].map((k) => [k, new Route(k, data[k])]));
 game.camps = campsFor(game.routes);
 game.field = { height: () => 5300, glacierAt: () => 0 };
 const KEY = 'everestSim.v2.save';
@@ -39,4 +39,20 @@ test('free viewing never writes the expedition save', () => {
   newGame(9, { free: true });
   save(true);
   assert.equal(store.has(KEY), false);
+});
+
+test('old v2 saves gain Nuptse progress and camp stock without losing the expedition', () => {
+  newGame(10); save(true);
+  const old = JSON.parse(store.get(KEY));
+  delete old.S.summits.nuptse;
+  delete old.S.stock.nuptse_c3;
+  delete old.S.usedO2Above7000;
+  old.S.summits.everest = true;
+  old.S.stock.c2 = 1;
+  store.set(KEY, JSON.stringify(old));
+  assert.equal(load(), true);
+  assert.equal(game.S.summits.everest, true);
+  assert.equal(game.S.summits.nuptse, false);
+  assert.equal(game.S.stock.nuptse_c3, 2);
+  assert.equal(game.S.stock.c2, 1);
 });

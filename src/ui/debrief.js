@@ -4,6 +4,7 @@ import { DEATH_ZONE } from '../config.js';
 import { dayOf, fmt, timeOfDay, clamp } from '../core/math.js';
 import { game, score } from '../sim/game.js';
 import { buildDebrief } from '../sim/debrief.js';
+import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const $ = (id) => document.getElementById(id);
 const ICONS = { camp: '▣', summit: '▲', death: '✝', win: '✔', fall: '✕', bottle: '◯', o2: 'O₂', rest: '…', start: '▶' };
@@ -14,8 +15,8 @@ export function renderDebrief() {
   hover = -1;
   const S = game.S;
   $('dbTitle').textContent = game.mode === 'won' ? 'Debrief — back at Camp 2' : 'Debrief — expedition over';
-  $('dbSub').textContent = S.cause || (S.summits.everest && S.summits.lhotse ? 'Everest and Lhotse summited.'
-    : S.summits.everest ? 'Mount Everest summited.' : S.summits.lhotse ? 'Lhotse summited.' : 'No summit reached.');
+  const reached = reachedSummits(S);
+  $('dbSub').textContent = S.cause || (reached.length ? `${reached.map((c) => c.name).join(' + ')} summited.` : 'No summit reached.');
   $('dbVerdict').innerHTML = current.empty ? '' : current.verdicts.map((v) =>
     `<div class="vd ${v.sev}"><span class="ic">${v.sev === 'bad' ? '✕' : v.sev === 'warn' ? '!' : '✓'}</span><span>${v.text}</span></div>`).join('');
   drawStats(current);
@@ -54,8 +55,7 @@ function drawStats(d) {
   const list = [
     ['Score', fmt(score())],
     ['Highest point', d.empty ? '—' : fmt(d.peak.y) + ' m'],
-    ['Everest', when('everest')],
-    ['Lhotse', when('lhotse')],
+    ...CLIMBS.map((c) => [c.short, when(c.id)]),
     ['Expedition time', `${Math.floor(game.time / 24)} d ${Math.floor(game.time % 24)} h`],
     ['Distance walked', (S.distance / 1000).toFixed(1) + ' km'],
     ['Falls', S.falls],
