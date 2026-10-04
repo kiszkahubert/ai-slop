@@ -17,7 +17,7 @@ export function initInput({ onDebugKey } = {}) {
     switch (e.code) {
       case 'KeyE': interact(); break;
       case 'KeyO': toggleO2(); break;
-      case 'KeyF': if (game.auto) stopAutopilot('Stopped following the route.'); else startAutopilot(); break;
+      case 'KeyF': if (game.auto) stopAutopilot('Stopped following the route.'); else startAutopilot({ nonstop: e.shiftKey }); break;
       case 'BracketRight': case 'Equal': setFlow(game.S.flow + 1); break;
       case 'BracketLeft': case 'Minus': setFlow(game.S.flow - 1); break;
       case 'KeyV': game.view.fp = !game.view.fp; document.getElementById('crosshair').classList.toggle('hidden', !game.view.fp); break;

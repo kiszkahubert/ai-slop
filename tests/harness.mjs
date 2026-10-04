@@ -3,9 +3,10 @@
 //   node tests/harness.mjs tests/smoke.json            # run a list of actions
 //
 // Environment:
-//   THREE_DIR    path to a local three@0.160.0 package (used instead of the CDN when set)
+//   THREE_DIR    path to a local three@0.160.0 package (default: node_modules/three when installed)
 //   CHROMIUM     path to a Chromium binary (default: Playwright's)
 //   SHOTS        directory for screenshots (default: tests/out)
+//   SHOT_TIMEOUT screenshot timeout in ms (default: 120000)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,6 +28,8 @@ const port = server.address().port;
 
 const actions = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const shots = process.env.SHOTS || path.join(root, 'tests', 'out');
+// SwiftShader captures can take 25-50 s on a busy machine; Playwright's default is 30 s
+const SHOT_TIMEOUT = Number(process.env.SHOT_TIMEOUT || 120000);
 fs.mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || undefined,
@@ -36,10 +39,12 @@ const page = await browser.newPage({ viewport: { width: Number(process.env.W || 
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); console.log(`[${m.type()}]`, m.text()); });
 page.on('pageerror', (e) => { errors.push(e.message); console.log('[pageerror]', e.message); });
-if (process.env.THREE_DIR) {
+// serve three.js locally when available, so the tests run offline and don't depend on the CDN
+const threeDir = process.env.THREE_DIR || (fs.existsSync(path.join(root, 'node_modules/three/build/three.module.js')) ? path.join(root, 'node_modules/three') : null);
+if (threeDir) {
   await page.route('https://cdn.jsdelivr.net/npm/three@0.160.0/**', (r) => {
     const rel = new URL(r.request().url()).pathname.replace('/npm/three@0.160.0/', '');
-    r.fulfill({ path: path.join(process.env.THREE_DIR, rel), contentType: 'text/javascript' });
+    r.fulfill({ path: path.join(threeDir, rel), contentType: 'text/javascript' });
   });
 }
 await page.goto(`http://localhost:${port}/${process.env.Q || '?debug'}`);
@@ -55,7 +60,7 @@ for (const a of actions) {
   }
   if (a.key) { await page.keyboard.down(a.key); await page.waitForTimeout(a.hold || 50); await page.keyboard.up(a.key); }
   if (a.wait) await page.waitForTimeout(a.wait);
-  if (a.shot) await page.screenshot({ path: path.join(shots, a.shot) });
+  if (a.shot) await page.screenshot({ path: path.join(shots, a.shot), timeout: SHOT_TIMEOUT });
 }
 await browser.close();
 server.close();

@@ -1,4 +1,5 @@
 // Wind noise that follows the wind speed, and an alarm for empty oxygen / severe hypoxia.
+import { OXYGEN } from './config.js';
 import { clamp } from './core/math.js';
 import { on } from './core/events.js';
 import { game } from './sim/game.js';
@@ -29,7 +30,7 @@ export function updateAudio(dt) {
   audio.gain.gain.setTargetAtTime(play ? clamp(w / 140, 0.03, 0.5) * 0.5 : 0, t, 0.4);
   audio.filt.frequency.setTargetAtTime(250 + w * 6 + 120 * Math.sin(performance.now() / 900), t, 0.3);
   audio.beep -= dt;
-  if (play && audio.beep <= 0 && ((S.o2on && (!o2Flowing(S) || S.tanks[0] < 30)) || S.spo2 < 58)) {
+  if (play && audio.beep <= 0 && ((S.o2on && (!o2Flowing(S) || S.tanks[0] < OXYGEN.lowBar)) || S.spo2 < 58)) {
     audio.beep = 2;
     const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
     o.frequency.value = 880; g.gain.value = 0.05; o.connect(g).connect(audio.ctx.destination);

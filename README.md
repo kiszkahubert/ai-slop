@@ -56,11 +56,13 @@ death marked, an oxygen strip along the bottom and a hover tooltip for any momen
 ES modules and the terrain files must be served over HTTP. Opening `index.html` from disk will not work.
 
 ```bash
-npm start                # = npx http-server -c-1 -p 8080 .
-# or: python3 -m http.server 8080
+npm install              # dev tools: http-server, three (for offline use), Playwright, ESLint
+npm start                # serves the folder on http://localhost:8080
+# or, without npm: python3 -m http.server 8080   (Windows: python -m http.server 8080)
 ```
 
-Then open <http://localhost:8080>. An internet connection is needed for Three.js.
+Then open <http://localhost:8080>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
+offline, open <http://localhost:8080/?localthree> instead, which uses the copy installed in `node_modules`.
 
 ## Controls
 
@@ -70,7 +72,8 @@ Then open <http://localhost:8080>. An internet connection is needed for Three.js
 | Mouse | Look (click the view to lock the pointer) |
 | Shift | Climb faster (more stamina, oxygen and breathing load) |
 | E | Enter a camp (rest, oxygen, forecast, save) · clip into, switch or unclip fixed ropes |
-| F | Follow the marked route up or down (the way you face) with time ×4. Any movement key takes back control |
+| F | Follow the marked route up or down (the way you face) with time ×4, stopping at camps. Any movement key takes back control |
+| Shift+F | Same, without stopping at camps (e.g. all the way down from the summit to Camp 2… and on to Base Camp) |
 | O | Oxygen on/off · 1–4 or `[` `]` flow in L/min |
 | V | Third / first person · mouse wheel sets camera distance |
 | M | Enlarge the route map |
@@ -86,7 +89,7 @@ src/
   main.js             boot and main loop
   config.js           tuning constants (time scale, speeds, oxygen, slip angle…)
   input.js, audio.js
-  core/               math helpers, seeded noise, event bus
+  core/               math helpers, seeded noise, event bus, spatial index
   world/
     geo.js            lat/lon ↔ world projection (origin = Everest summit), named peaks
     heightfield.js    loads the DEM tiles, refines 15 m → 7.5 m, levels the boot track, camp terraces,
@@ -110,8 +113,8 @@ assets/
   terrain/core.png, backdrop.png, meta.json   heights as RGB (h = (R·256 + G) / 4 m), B = glacier mask
   route.json                                  generated route paths and waypoint tags
   ai-slop-badge.png                           badge above, vibecoded like the rest of it
-tools/                asset pipeline (Python)
-tests/                Playwright harness + gameplay tests
+tools/                asset pipeline (Python) + run-python.mjs (cross-platform interpreter picker)
+tests/                Playwright harness + gameplay tests; tests/unit/ node:test suites
 ```
 
 ## Rebuilding the terrain and route
@@ -123,21 +126,32 @@ for t in N27_00_E086_00 N28_00_E086_00 N27_00_E087_00 N28_00_E087_00; do
   curl -O "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_${t}_DEM/Copernicus_DSM_COG_10_${t}_DEM.tif"
   mv "Copernicus_DSM_COG_10_${t}_DEM.tif" "${t}.tif"
 done
-cd .. && python3 tools/build_assets.py --dem ./dem
+cd .. && npm run build-assets          # = node tools/run-python.mjs tools/build_assets.py --dem ./dem
 ```
+
+`tools/run-python.mjs` picks whichever interpreter really works (`python3`, `python` or the Windows `py -3`
+launcher). On Windows, `python3` is often only the Microsoft Store stub. On Windows, use PowerShell's
+`Invoke-WebRequest` or Git Bash for the download loop above, and `python -m pip install …` for the dependencies.
 
 `build_assets.py` samples the DEM onto the game grids and restores the summit elevations. It raises only the upper
 part of each mountain, so the DEM's ridges stay intact. It also traces the Southeast Ridge crest and gives it the
 true South Summit, Hillary Step and summit profile. Finally it generates the route by least-cost pathfinding over the
 real slopes between surveyed waypoints.
 
-## Tests
+## Tests and lint
 
 ```bash
-npm install                    # Playwright
-npm test                       # hazards, UI flows, full Everest and Lhotse expeditions
-THREE_DIR=/path/to/three node tests/harness.mjs tests/hazards.json   # offline: serve three.js locally
+npm run lint                   # ESLint (eslint.config.js)
+npm run test:unit              # fast node:test suites: physiology, weather, route model, spatial index, saves
+npm run test:e2e               # Playwright: hazards, UI flows, free viewing, full Everest and Lhotse expeditions
+npm test                       # unit + e2e
+node tests/harness.mjs tests/hazards.json   # a single e2e suite
 ```
+
+The e2e harness serves three.js from `node_modules` when it is installed (override with `THREE_DIR`), so it runs
+offline. Software (SwiftShader) rendering makes screenshots slow, so each one may take up to `SHOT_TIMEOUT` ms
+(default 120000). GitHub Actions runs lint and the unit tests, then the e2e suites, on every push and pull request
+(`.github/workflows/ci.yml`).
 
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
 must end with a win. The debrief test kills the climber through the physiology system and checks that the debrief

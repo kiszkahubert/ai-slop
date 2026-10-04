@@ -5,7 +5,8 @@ import { clamp, smoothstep } from '../core/math.js';
 import { toast, emit } from '../core/events.js';
 import { windChill, sunDirection } from './weather.js';
 
-export const o2Flowing = (S) => S.o2on && S.tanks.length > 0 && S.tanks[0] > 0;
+export const o2Flowing = (S) => S.o2on && S.tanks.length > 0 && S.tanks[0] > OXYGEN.emptyBar;
+export const isEmptyBottle = (bar) => bar <= OXYGEN.emptyBar;
 export const o2Benefit = (S) => (o2Flowing(S) ? OXYGEN.flowBenefit[S.flow] : 0);
 export const hypF = (S) => 0.38 + 0.62 * smoothstep(52, 90, S.spo2);         // movement factor from hypoxia
 export const maxStamina = (S) => 100 - 0.6 * S.exh;
@@ -20,7 +21,7 @@ export function spo2Target(S, h, exert) {
 
 export function swapTank(S, auto) {
   const before = S.tanks.length;
-  S.tanks = S.tanks.filter((p) => p > 1);
+  S.tanks = S.tanks.filter((p) => !isEmptyBottle(p));
   const dropped = before - S.tanks.length;
   if (dropped) emit('bottle', S.tanks.length, S.tanks[0] || 0);
   if (!S.tanks.length) {
@@ -56,7 +57,7 @@ export function stepPhysiology(game, dtH, ctx) {
     if (!o2Flowing(S)) swapTank(S, true);
     if (o2Flowing(S)) {
       S.tanks[0] -= (S.flow / OXYGEN.bottleLitres) * 60 * dtH * (ctx.sprint ? 1.3 : 1);
-      if (S.tanks[0] <= 0) { S.tanks[0] = 0; swapTank(S, true); }
+      if (isEmptyBottle(S.tanks[0])) { S.tanks[0] = Math.max(0, S.tanks[0]); swapTank(S, true); }
     }
   }
   const exert = ctx.resting ? -2 : ctx.sprint ? 7 : ctx.moving ? 2.5 + 2 * Math.max(0, ctx.grade) : 0;
