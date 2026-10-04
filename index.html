@@ -131,6 +131,7 @@
     <div class="btns" style="margin-top:16px">
       <button class="primary" id="btnDeadLoad">Retry from last save</button>
       <button id="btnDeadNew">New expedition</button>
+      <button id="btnDeadDebrief">Debrief ▸</button>
     </div>
   </div>
 </div>
@@ -143,6 +144,35 @@
     <div class="btns" style="margin-top:16px">
       <button class="primary" id="btnWinContinue">Keep climbing (go for the other summit)</button>
       <button id="btnWinNew">New expedition</button>
+      <button id="btnWinDebrief">Debrief ▸</button>
+    </div>
+  </div>
+</div>
+
+<div id="scrDebrief" class="screen hidden">
+  <div class="card" style="width:min(900px,100%)">
+    <h1 id="dbTitle">Debrief</h1>
+    <p id="dbSub" class="cause"></p>
+    <div id="dbVerdict" class="verdict"></div>
+    <div class="dbwrap">
+      <canvas id="dbChart" width="1400" height="520"></canvas>
+      <div id="dbTip" class="dbTip hidden"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#7fd8a8"></i>SpO₂ ≥ 80%</span>
+      <span><i style="background:#f2c14e"></i>68–79%</span>
+      <span><i style="background:#ff5a4f"></i>&lt; 68%</span>
+      <span><i class="blue"></i>O₂ flowing (bar height = bottle pressure)</span>
+      <span>▣ camp</span><span>▲ summit</span><span>✕ slip</span><span>hover for details</span>
+    </div>
+    <div class="dbcols">
+      <div><h3>The climb, decision by decision</h3><div id="dbJournal" class="journal"></div></div>
+      <div><h3>Key numbers</h3><div id="dbStats" class="stats"></div></div>
+    </div>
+    <div class="btns" style="margin-top:16px">
+      <button class="primary" id="btnDbRetry">Retry from last save</button>
+      <button id="btnDbNew">New expedition</button>
+      <button id="btnDbClose">Back</button>
     </div>
   </div>
 </div>

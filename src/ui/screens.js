@@ -7,10 +7,11 @@ import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, re
   destinations, teleportTo, enterFreeViewing, setHour, setClearWeather } from '../sim/game.js';
 import { nearestRope, clipTo } from '../sim/player.js';
 import { resetHUD } from './hud.js';
+import { renderDebrief } from './debrief.js';
 
 const $ = (id) => document.getElementById(id);
-const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrLoading'];
-let canvas, currentCamp = null, pausedAt = 0, expectUnlock = false;
+const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrDebrief', 'scrLoading'];
+let canvas, currentCamp = null, pausedAt = 0, expectUnlock = false, debriefReturn = 'scrDead';
 
 function show(id) { for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id); }
 
@@ -30,6 +31,12 @@ export function initScreens(glCanvas) {
   $('btnDeadNew').onclick = () => $('btnNew').onclick();
   $('btnWinContinue').onclick = () => resumePlay();
   $('btnWinNew').onclick = () => $('btnNew').onclick();
+  const openDebrief = (from) => { debriefReturn = from; show('scrDebrief'); renderDebrief(); };
+  $('btnDeadDebrief').onclick = () => openDebrief('scrDead');
+  $('btnWinDebrief').onclick = () => openDebrief('scrWin');
+  $('btnDbClose').onclick = () => show(debriefReturn);
+  $('btnDbRetry').onclick = $('btnDeadLoad').onclick;
+  $('btnDbNew').onclick = () => $('btnNew').onclick();
   $('campCard').addEventListener('click', onCampClick);
   on('openCamp', openCamp);
   on('openTravel', () => openTravel());

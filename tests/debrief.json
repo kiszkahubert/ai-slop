@@ -1,0 +1,2 @@
+[{"click":"#btnNew"},{"wait":400},
+ {"script":"tests/debrief.js","expect":"r.ok === true"}]

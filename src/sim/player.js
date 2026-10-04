@@ -220,6 +220,7 @@ export function startFall() {
   const P = game.P;
   P.falling = { vx: 0, vz: 0, v: 0, startY: P.y, maxV: 0, t: 0, arrestTried: false, region: region().replace(/^(Camp|Lhotse Camp) \d.*/, 'route') };
   game.S.falls++;
+  emit('fall', P.falling.region, P.y);
   if (game.auto) game.auto = null;
   toast('You slipped! Self-arrest…', 'bad', 3);
 }

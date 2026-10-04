@@ -4,6 +4,7 @@ import { emit, toast } from '../core/events.js';
 import { fmt, timeOfDay, dayOf } from '../core/math.js';
 import { Weather } from './weather.js';
 import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank } from './physiology.js';
+import { resetDebrief, recordSample } from './debrief.js';
 import { LANDMARKS, regionName } from '../world/route.js';
 
 const SAVE_KEY = 'everestSim.v2.save';
@@ -22,13 +23,14 @@ export const game = {
 
 export function newGame(seed, { free = false } = {}) {
   const g = game;
+  resetDebrief();
   g.free = free;
   g.S = {
     seed, health: 100, stamina: 100, frost: 0, exh: 8, spo2: 85, accl: 5200, maxAlt: 0,
     o2on: false, flow: 2, tanks: [OXYGEN.bottleBar, OXYGEN.bottleBar],
     summits: { everest: false, lhotse: false }, summitTimes: {}, summitNoO2: {},
     usedO2InDZ: false, deathZoneHours: 0, stock: Object.fromEntries(g.camps.map((c) => [c.id, c.stock === Infinity ? 99 : c.stock])),
-    visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false,
+    visited: { ebc: true }, landmarks: {}, cause: null, winShownFor: 0, falls: 0, distance: 0, turnWarned: false, inDZ: false, nearCampId: null,
   };
   g.time = START_TIME_H;
   g.weather = new Weather(seed);
@@ -56,6 +58,7 @@ export function nearCamp(x, z) {
 export function die(cause) {
   if (game.mode === 'dead') return;
   game.mode = 'dead'; game.S.cause = cause; game.auto = null;
+  recordSample(game, false, true);
   emit('death', cause);
 }
 
@@ -74,6 +77,8 @@ export function checkProgress() {
     S.visited[camp.id] = true;
     toast(`Reached ${camp.name} — ${fmt(camp.elevation)} m. Press E to rest, change bottles and save.`, 'good', 7);
   }
+  if (camp && S.nearCampId !== camp.id) { S.nearCampId = camp.id; emit('camp', camp); }
+  else if (!camp) S.nearCampId = null;
   if (P.y > DEATH_ZONE && !S.inDZ) {
     S.inDZ = true; emit('deathzone');
     if (!o2Flowing(S)) toast('You are above 8,000 m without supplemental oxygen. Press O!', 'bad', 6);
@@ -114,10 +119,12 @@ export function restHours(hours) {
     game.time += dtH;
     const cause = stepPhysiology(game, dtH, { resting: true, moving: false, sprint: false, grade: 0 });
     if (cause) { die(cause); return false; }
+    recordSample(game, true);
   }
   game.S.stamina = maxStamina(game.S); game.S.winded = false;
   refreshConditions();
   save(true);
+  emit('rest', hours, nearCamp(game.P.x, game.P.z)?.short);
   toast(`Rested ${hours} h — ${timeOfDay(game.time)}, Day ${dayOf(game.time)}. Progress saved.`, 'good');
   return true;
 }
@@ -147,10 +154,12 @@ export function toggleO2() {
   S.o2on = !S.o2on;
   if (S.o2on && !o2Flowing(S)) swapTank(S, false);
   toast(S.o2on ? `Oxygen ON — ${S.flow} L/min.` : 'Oxygen OFF.', S.o2on ? 'info' : 'warn', 2.5);
+  emit('o2', S.o2on, S.flow);
 }
 export function setFlow(f) {
   game.S.flow = Math.max(1, Math.min(4, f));
   toast(`Oxygen flow ${game.S.flow} L/min${game.S.o2on ? '' : ' (flow is off — press O)'}`, 'info', 2);
+  emit('o2', game.S.o2on, game.S.flow);
 }
 
 // ---------------- save / load
@@ -180,6 +189,7 @@ export function load() {
   game.P.y = game.field.height(game.P.x, game.P.z);
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
   game.weather = new Weather(game.S.seed);
+  resetDebrief();
   refreshConditions();
   return true;
 }

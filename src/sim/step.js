@@ -3,6 +3,7 @@ import { TIME_SCALE } from '../config.js';
 import { clamp } from '../core/math.js';
 import { game, checkProgress, die, refreshConditions } from './game.js';
 import { stepPhysiology } from './physiology.js';
+import { recordSample } from './debrief.js';
 import { updatePlayer, stopAutopilot } from './player.js';
 
 let envTimer = 0;
@@ -29,6 +30,7 @@ export function simStep(dt, ctl) {
     checkProgress();
     return true;
   }
+  recordSample(game);
   const cause = stepPhysiology(game, (dt * TIME_SCALE) / 3600, { moving: P.moving, sprint: P.sprint, grade: P.grade, resting: false });
   if (cause) { die(cause); return false; }
   checkProgress();
