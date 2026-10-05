@@ -6,6 +6,8 @@ import { makeNoise2D, mulberry32 } from '../core/noise.js';
 import { ropeDefs, CLIMBS } from './route.js';
 import { routeCrevasse } from './routeHazards.js';
 import { placeMemorials } from './memorials.js';
+import { buildBaseCamp } from './baseCamp.js';
+import { PEAKS } from './geo.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -29,15 +31,15 @@ function finish(...ims) {
   }
 }
 
-export function makeLabel(scene, text, sub) {
+export function makeLabel(scene, text, sub, kind = 'place') {
   const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
   const g = cv.getContext('2d');
   g.fillStyle = 'rgba(8,14,22,0.72)'; g.beginPath(); g.roundRect(4, 14, 504, 100, 20); g.fill();
-  g.fillStyle = '#fff'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(text, 256, 62);
+  g.fillStyle = '#fff'; g.font = 'bold 44px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(kind === 'peak' ? '▲ ' + text : text, 256, 62);
   g.fillStyle = '#9fc4e8'; g.font = '32px system-ui, sans-serif'; g.fillText(sub, 256, 100);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, sizeAttenuation: false, transparent: true, depthWrite: false, fog: false }));
-  sp.scale.set(0.16, 0.04, 1);
+  if (kind === 'peak') sp.scale.set(0.12, 0.03, 1); else sp.scale.set(0.16, 0.04, 1);
   scene.add(sp);
   return sp;
 }
@@ -48,7 +50,8 @@ export function crevasseLocal(cv, x, z, pad = 0) {
   return Math.abs(u) < cv.len / 2 + pad && Math.abs(v) < cv.w / 2 + pad ? { u, v } : null;
 }
 
-export function buildProps(scene, field, routes, camps, seed = 5) {
+/** opts: { backdrop (outer height field, for peak name tags), basePlan (planBaseCamp result), seed } */
+export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5 } = {}) {
   const r = mulberry32(seed);
   const H = (x, z) => field.height(x, z);
   const world = { camps, ropes: [], crevasses: [], seracGrid: new Map(), labels: [] };
@@ -101,6 +104,15 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
     const p = route.pts[route.pts.length - 1], y = H(p.x, p.z);
     prayerFlags(scene, field, p.x, y + 1.5, p.z, 5, 10, 1.4, r);
     const l = makeLabel(scene, title, fmt(y) + ' m'); l.position.set(p.x, y + 30, p.z); world.labels.push(l);
+  }
+  // name tags on the other real summits in view, placed on the rendered top
+  for (const pk of PEAKS) {
+    if (CLIMBS.some((c) => c.id === pk.id)) continue;
+    const top = peakTop(field, backdrop, pk);
+    const l = makeLabel(scene, pk.name, fmt(pk.e) + ' m', 'peak');
+    l.position.set(top.x, top.y + 90, top.z);
+    Object.assign(l.userData, { range: 75000, near: 1500, baseY: top.y + 90, curve: true });
+    world.labels.push(l);
   }
 
   // ---------------- route wands and boot track
@@ -197,7 +209,20 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
 
   finish(tents, mess, bottles, poles, flags, rungs, seracs, rocks);
   world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
+  if (basePlan) world.baseCamp = buildBaseCamp(scene, field, routes, basePlan, world, prayerFlags, makeLabel);
   return world;
+}
+
+/** The highest rendered point near a peak's surveyed position (core terrain if it is there, else the backdrop). */
+function peakTop(core, backdrop, pk) {
+  const inCore = core.contains(pk.x, pk.z, 200), f = inCore || !backdrop ? core : backdrop;
+  const R = inCore ? 700 : 1600, step = inCore ? 8 : 40;
+  let best = { x: pk.x, z: pk.z, y: f.height(pk.x, pk.z) };
+  for (let z = pk.z - R; z <= pk.z + R; z += step) for (let x = pk.x - R; x <= pk.x + R; x += step) {
+    if ((x - pk.x) ** 2 + (z - pk.z) ** 2 > R * R) continue;
+    const y = f.height(x, z); if (y > best.y) best = { x, z, y };
+  }
+  return best;
 }
 
 function bootTrack(scene, field, route) {

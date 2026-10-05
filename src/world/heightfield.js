@@ -70,8 +70,10 @@ export class CoreField extends GridField {
    * Keep the native grid (or refine a legacy grid), level the track and cut camp terraces.
    * summits: [{ x, z, e }] - points snapped to their surveyed elevation (the smoothed track profile
    * would otherwise shave a few metres off a sharp top).
+   * extra: { pads: [{ x, z, h, rin, rout }] more terraces (Base Camp compounds, helipad, ponds),
+   *          relief(x, z, h, glacier01, trackDist) -> metres added to the surface (Base Camp glacier hummocks) }
    */
-  refine(routes, camps, seed = 1, summits = []) {
+  refine(routes, camps, seed = 1, summits = [], extra = {}) {
     const R = this.refineFactor, B = this.base, noise = makeNoise2D(mulberry32(seed));
     if (R !== 1 && R !== 2) throw new Error('Terrain refinement must be 1 or 2');
     const nx = (B.nx - 1) * R + 1, nz = (B.nz - 1) * R + 1, cell = B.cell / R;
@@ -131,6 +133,15 @@ export class CoreField extends GridField {
       return hv;
     };
     const pads = camps.map((c) => ({ x: c.x, z: c.z, h: profiles[c.routeIndex][c.pointIndex], rin: c.pad[0], rout: c.pad[0] + c.pad[1] }));
+    pads.push(...(extra.pads || []));
+    // terraces bucketed on a 64 m grid, so each terrain cell only tests the few that can reach it
+    const PB = 64, padBuckets = new Map();
+    for (const p of pads) {
+      for (let bz = Math.floor((p.z - p.rout) / PB); bz <= Math.floor((p.z + p.rout) / PB); bz++)
+        for (let bx = Math.floor((p.x - p.rout) / PB); bx <= Math.floor((p.x + p.rout) / PB); bx++) {
+          const k = bx * 100003 + bz; if (!padBuckets.has(k)) padBuckets.set(k, []); padBuckets.get(k).push(p);
+        }
+    }
     // Rock-exposure shading for the Lhotse Couloir and Geneva Spur.
     const lh = routes[1], couloirFrom = lh.tags.couloir - 20;
     const gen = routes[0].pts[routes[0].tags.geneva];
@@ -166,7 +177,8 @@ export class CoreField extends GridField {
         const dg = Math.hypot(x - gen.x - 40, z - gen.z + 30);
         if (dg < 170) rk = Math.max(rk, (1 - smoothstep(60, 170, dg)) * (td > 5 ? 1 : 0.3));
         rockMask[o] = rk * 255;
-        for (const p of pads) {           // camp terraces first; the boot track (below) keeps its own smooth profile
+        if (extra.relief) h += extra.relief(x, z, h, glacier[o] / 255, td);
+        for (const p of padBuckets.get(Math.floor(x / PB) * 100003 + Math.floor(z / PB)) || []) {   // terraces first; the boot track (below) keeps its own profile
           const d = Math.hypot(x - p.x, z - p.z);
           if (d < p.rout) h = lerp(h, p.h, 1 - smoothstep(p.rin, p.rout, d));
         }

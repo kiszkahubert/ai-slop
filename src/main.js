@@ -7,6 +7,7 @@ import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
 import { createTerrainMaterial, updateTerrainMaterial } from './world/terrainMaterial.js';
 import { buildProps } from './world/props.js';
+import { planBaseCamp } from './world/baseCamp.js';
 import { Environment } from './world/environment.js';
 import { createClimber } from './render/climber.js';
 import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality } from './render/quality.js';
@@ -67,7 +68,8 @@ async function boot() {
   await step('Preparing the native 4 m terrain and boot track…');
   const t0 = performance.now();
   const top = (r, id) => ({ ...r.pts[r.pts.length - 1], e: PEAKS.find((p) => p.id === id).e });
-  field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)));
+  const basePlan = planBaseCamp(field, routes);
+  field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)), { pads: basePlan.pads, relief: basePlan.relief });
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
   await step('Painting rock, snow and ice…');
@@ -85,7 +87,7 @@ async function boot() {
   terrain = new TerrainLOD(scene, terrainMat, field, coreTerrainOptions());
   backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Fixing ropes, ladders and camps…');
-  game.world = buildProps(scene, field, routes, game.camps);
+  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan });
   env = new Environment(scene, renderer, { quality, field, macroShadow });
   climber = createClimber(scene, { renderer });
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too

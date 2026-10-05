@@ -60,7 +60,7 @@ export class Route {
 
 // Camp definitions. Pads are [flat radius, falloff] in metres; stock = full oxygen bottles.
 export const CAMP_DEFS = [
-  { id: 'ebc', route: 'main', name: 'Everest Base Camp', short: 'EBC', stock: Infinity, pad: [42, 25], tents: 40, spread: 70 },
+  { id: 'ebc', route: 'main', name: 'Everest Base Camp', short: 'EBC', stock: Infinity, pad: [34, 75], tents: 40, spread: 70 },
   { id: 'c1', route: 'main', name: 'Camp 1', short: 'C1', stock: 0, pad: [16, 14], tents: 10, spread: 22 },
   { id: 'c2', route: 'main', name: 'Camp 2 · Advanced Base Camp', short: 'C2', stock: 4, pad: [26, 18], tents: 18, spread: 34 },
   { id: 'c3', route: 'main', name: 'Camp 3 · Lhotse Face', short: 'C3', stock: 3, pad: [8, 10], tents: 6, spread: 10 },

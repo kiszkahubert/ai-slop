@@ -1,0 +1,2 @@
+[{"click":"#btnNew"},{"wait":300},
+ {"script":"tests/basecamp.js","expect":"r.camp.compounds >= 30 && r.camp.towers >= 100 && r.peakTags >= 18 && r.crampon && r.towersOnTrail === 0 && r.reached >= r.target && r.mode === 'play'"}]

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
+import { TERRAIN } from '../config.js';
 import { mulberry32 } from '../core/noise.js';
 import { sunDirection } from '../sim/weather.js';
 import { setupLighting } from '../render/lighting.js';
@@ -104,8 +105,13 @@ export class Environment {
     const spindrift = smoothstep(55, 110, ctx.env.wind) * (P.y > 7000 ? 0.6 : 0.2);
     this.snow.update(dt, camera.position, clamp(smoothstep(0.25, 0.8, w.S) + spindrift, 0, 1), ctx.env.wind, w.dir, day);
     for (const l of ctx.labels) {
+      const u = l.userData;
+      if (u.curve) {                       // distant summits sit lower with the curvature of the Earth, like the terrain
+        const dx = l.position.x - camera.position.x, dz = l.position.z - camera.position.z;
+        l.position.y = u.baseY - (dx * dx + dz * dz) / (2 * TERRAIN.earthRadius);
+      }
       const d = l.position.distanceTo(camera.position);
-      l.material.opacity = clamp(1.25 - d / (l.userData.range || 4000), 0, 1) * (d < (l.userData.range ? 6 : 30) ? 0 : 1);
+      l.material.opacity = clamp(1.25 - d / (u.range || 4000), 0, 1) * (d < (u.near ?? (u.range ? 6 : 30)) ? 0 : 1);
     }
     return el;
   }
