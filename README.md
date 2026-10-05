@@ -149,6 +149,22 @@ solar panels and fuel barrels. At the trekkers' end (toward Gorak Shep) stands t
 boulder, buried in prayer flags, with a helipad nearby. Compound sites are chosen from the terrain itself: gentle
 glacier ground at base-camp altitude, away from the route.
 
+The camps use shared, metre-scale expedition models: shaped sleeping-tent flys with crossing poles, clips, stitched
+panels, zipped doors, vestibules and ground skirts; framed geodesic dining shelters and windowed ridge-roof mess
+tents; supported tarp kitchens and toilet shelters. Equipment includes hooped drums with sealed lids, oxygen
+cylinders with valves and gauges, latched cases, and framed solar-cell panels with stands and cables. Guy lines
+are pegged to the actual ground. Shared fabric, paint, plastic, stone and solar textures are generated locally
+with color, normal and roughness maps, without additional downloads. These are exterior visual models; camp
+interactions, terrain, collision rules and saves are unchanged.
+
+Camp detail follows **Low / Medium / High**: fabric textures are 256 / 512 / 1024 px (smaller equipment maps are
+capped at 256–512 px), with fine geometry appearing within about 40 / 80 / 120 m of the camera. Simpler textured
+models remain in the distance; a transition margin prevents repeated detail changes at the boundary. Repeated
+parts share geometry and materials and are instanced in spatial batches. Quality changes release replaced maps.
+For matching camp views and draw-call/triangle comparisons, run `node tools/capture-camps.mjs before medium`
+before changes and `node tools/capture-camps.mjs after medium` afterward. Outputs go to `tests/out/`;
+`CHROMIUM` can select a browser executable. CPU submission timings are diagnostic, not a hardware FPS benchmark.
+
 **The walk to the Icefall** crosses debris-covered glacier: hummocks, troughs and melt ponds (added to the glacier
 surface, which the elevation data shows too smooth here) and clusters of white ice towers that are solid like the
 seracs. It ends at **Crampon Point**, where the fixed lines into the Icefall begin. The trail itself, the camp

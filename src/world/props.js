@@ -8,6 +8,7 @@ import { routeCrevasse } from './routeHazards.js';
 import { placeMemorials } from './memorials.js';
 import { buildBaseCamp } from './baseCamp.js';
 import { PEAKS } from './geo.js';
+import { CampVisuals } from '../render/campVisuals.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -50,17 +51,15 @@ export function crevasseLocal(cv, x, z, pad = 0) {
   return Math.abs(u) < cv.len / 2 + pad && Math.abs(v) < cv.w / 2 + pad ? { u, v } : null;
 }
 
-/** opts: { backdrop (outer height field, for peak name tags), basePlan (planBaseCamp result), seed } */
-export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5 } = {}) {
+/** opts: { backdrop, basePlan, seed, quality (graphics preset), anisotropy } */
+export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5, quality, anisotropy = 1 } = {}) {
   const r = mulberry32(seed);
   const H = (x, z) => field.height(x, z);
   const world = { camps, ropes: [], crevasses: [], seracGrid: new Map(), labels: [] };
+  const campVisuals = world.campVisuals = new CampVisuals(scene, field, { quality, anisotropy });
   const box = new THREE.BoxGeometry(1, 1, 1);
 
   // ---------------- camps
-  const tents = instanced(scene, new THREE.SphereGeometry(1, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 0.7 }), 160);
-  const mess = instanced(scene, box, new THREE.MeshStandardMaterial({ roughness: 0.8 }), 40);
-  const bottles = instanced(scene, new THREE.CylinderGeometry(0.11, 0.11, 0.62, 10), new THREE.MeshStandardMaterial({ color: 0xe8661a, roughness: 0.4, metalness: 0.3 }), 120);
   const TENT = [0xf5b301, 0xf07d12, 0xe03a26, 0xf5d000, 0x2a8de0, 0x3db35a, 0xf5b301, 0xf07d12];
   for (const c of camps) {
     const route = routes[c.route], ny = H(c.x, c.z), dir = route.at(c.s);
@@ -72,26 +71,31 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
       const y = H(x, z);
       if (Math.abs(y - ny) > (c.id === 'ebc' ? 12 : 3)) continue;
       const s = 1.1 + r() * 0.5;
-      add(tents, x, y - 0.05, z, r() * 6, s * 1.25, s * 0.95, s, TENT[Math.floor(r() * TENT.length)]);
+      campVisuals.add('sleep', { x, y, z, rot: r() * 6, scale: [s * 1.25 / 1.28, s * 0.95 / 1.17, s / 1.02],
+        color: TENT[Math.floor(r() * TENT.length)], id: `${c.id}-sleep-${placed}` });
       placed++;
     }
     const ox = c.x - dir.dz * 5, oz = c.z + dir.dx * 5;
     const nb = c.id === 'ebc' ? 12 : Math.max(2, Math.min(8, c.stock + 2));
-    for (let k = 0; k < nb; k++) { const bx = ox + (k % 4) * 0.25, bz = oz + Math.floor(k / 4) * 0.25; add(bottles, bx, H(bx, bz) + 0.31, bz); }
+    for (let k = 0; k < nb; k++) { const x = ox + (k % 4) * 0.25, z = oz + Math.floor(k / 4) * 0.25;
+      campVisuals.add('bottle', { x, z, color: 0xe8661a, id: `${c.id}-bottle-${k}` }); }
     if (c.id === 'ebc') {
       for (let k = 0; k < 10; k++) {
         const a = r() * Math.PI * 2, d = 20 + r() * 45, x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
         if (field.distanceToTrack(x, z) < 8) continue;
-        add(mess, x, H(x, z) + 1.2, z, r() * 3, 7, 2.4, 4, [0x3a6fb5, 0xd8d2c0, 0x5b8a3c, 0xc9a227][k % 4]);
+        campVisuals.add('mess', { x, z, rot: r() * 3, scale: [7 / 8, 2.4 / 2.9, 4 / 4.2],
+          color: [0x3a6fb5, 0xd8d2c0, 0x5b8a3c, 0xc9a227][k % 4], id: `hub-mess-${k}` });
       }
       const chx = c.x - 26, chz = c.z + 20, chy = H(chx, chz);
-      add(mess, chx, chy + 0.6, chz, 0.3, 2.4, 1.2, 2.4, 0xb8b0a5);
-      add(mess, chx, chy + 1.5, chz, 0.3, 1.5, 0.6, 1.5, 0xe8e2d5);
+      campVisuals.add('altar', { x: chx, y: chy, z: chz, rot: 0.3, scale: [1.5, 1, 1.5], color: 0xb8b0a5, id: 'hub-altar' });
       prayerFlags(scene, field, chx, chy + 2, chz, 8, 28, 8, r);
     }
     if (c.id === 'c4') {
       // the South Col is littered with spent bottles and torn tents
-      for (let k = 0; k < 25; k++) { const x = c.x + (r() - 0.5) * 70, z = c.z + (r() - 0.5) * 70; add(bottles, x, H(x, z) + 0.08, z, r() * 6, 1, 1, 1, null, _q.setFromEuler(new THREE.Euler(Math.PI / 2, r() * 6, 0))); }
+      for (let k = 0; k < 25; k++) { const x = c.x + (r() - 0.5) * 70, z = c.z + (r() - 0.5) * 70;
+        campVisuals.add('bottle', { x, y: H(x, z) + 0.108, z, rot: r() * 6, color: 0xe8661a,
+          quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, r() * 6, 0)),
+          originOffset: [0, -0.31, 0], ground: false, id: `c4-spent-${k}` }); }
     }
     c.label = makeLabel(scene, c.short === 'EBC' ? 'Base Camp' : c.name.split(' · ')[0], fmt(ny) + ' m');
     c.label.position.set(c.x, ny + 30, c.z);
@@ -206,9 +210,10 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
     add(rocks, x, H(x, z) + 0.5, z, r() * 6, 1.4 + r() * 1.4, 1.5 + r() * 2.5, 1.2 + r());
   }
 
-  finish(tents, mess, bottles, poles, flags, rungs, seracs, rocks);
+  finish(poles, flags, rungs, seracs, rocks);
   world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
   if (basePlan) world.baseCamp = buildBaseCamp(scene, field, routes, basePlan, world, prayerFlags, makeLabel);
+  campVisuals.finish();
   return world;
 }
 

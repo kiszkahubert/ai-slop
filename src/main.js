@@ -89,7 +89,7 @@ async function boot() {
   terrain = new TerrainLOD(scene, terrainMat, field, coreTerrainOptions());
   backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Fixing ropes, ladders and camps…');
-  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan });
+  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy() });
   await step('Preparing fall and snow physics…');
   await initPhysics();
   game.physics = new PhysicsScene(game, { die });
@@ -104,6 +104,7 @@ async function boot() {
   initInput({ onDebugKey: DEBUG ? debugKey : null });
   await step('Pitching tents at Base Camp…');
   rig.update(0, 0, game, climber);
+  game.world.campVisuals.update(camera);
   for (let k = 0; k < 60 && terrain.update(camera.position, 40) > 0; k++);
   backdrop.update(camera.position, 40);
   showTitle();
@@ -123,6 +124,7 @@ function frame(now) {
   climber.update(dt, game.P, game.S, game.physics);
   rig.update(dt, simTime, game, climber);
   avalancheView.update(game.mode==='play'||game.mode==='dead'?dt:0, game.physics, camera);
+  game.world.campVisuals.update(camera);
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
@@ -165,6 +167,8 @@ function setQuality(name) {
   resize();
   env.applyQuality(q);
   postfx.configure(q);
+  game.world.campVisuals.applyQuality(q);
+  game.world.campVisuals.update(camera, true);
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
   if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
