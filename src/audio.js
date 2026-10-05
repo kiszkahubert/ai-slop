@@ -20,7 +20,9 @@ function start() {
     const filt = ctx.createBiquadFilter(); filt.type = 'bandpass'; filt.Q.value = 0.6;
     const gain = ctx.createGain(); gain.gain.value = 0;
     src.connect(filt).connect(gain).connect(ctx.destination); src.start();
-    audio = { ctx, filt, gain, beep: 0 };
+    const rumble=ctx.createBiquadFilter(),snowGain=ctx.createGain(); rumble.type='lowpass';rumble.frequency.value=180;snowGain.gain.value=0;
+    src.connect(rumble).connect(snowGain).connect(ctx.destination);
+    audio = { ctx, filt, gain, snowGain, beep: 0 };
   } catch { audio = null; }
 }
 
@@ -29,6 +31,9 @@ export function updateAudio(dt) {
   const play = game.mode === 'play', w = game.env.wind, t = audio.ctx.currentTime, S = game.S;
   audio.gain.gain.setTargetAtTime(play ? clamp(w / 140, 0.03, 0.5) * 0.5 : 0, t, 0.4);
   audio.filt.frequency.setTargetAtTime(250 + w * 6 + 120 * Math.sin(performance.now() / 900), t, 0.3);
+  const A=game.physics?.avalanche,dist=A?Math.hypot(game.P.x-A.source.x,game.P.z-A.source.z):0;
+  const intensity=A&&!A.settled&&(play||game.mode==='dead')?clamp(A.maxSpeed/25,0,1)/(1+dist/200):0;
+  audio.snowGain.gain.setTargetAtTime(intensity*.6,t,.2);
   audio.beep -= dt;
   if (play && audio.beep <= 0 && ((S.o2on && (!o2Flowing(S) || S.tanks[0] < OXYGEN.lowBar)) || S.spo2 < 58)) {
     audio.beep = 2;

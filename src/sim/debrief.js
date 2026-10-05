@@ -46,6 +46,10 @@ on('summit', (id) => {
 on('death', () => note('death', 'Expedition over'));
 on('win', () => note('win', 'Back at Camp 2, alive'));
 on('fall', (region, y) => note('fall', `Slipped on the ${region}`, { y }));
+on('avalanche',(event)=>note('avalanche',`Avalanche release · ${fmt(event.volume)} m³ of snow`));
+on('impact',(event)=>note('impact',`Fall impact · ${event.part} · ${fmt(event.speed*3.6)} km/h`,{damage:event.damage}));
+on('burial',(event)=>note('burial',`Buried in avalanche debris · ${event.depth.toFixed(1)} m over the head`));
+on('escaped-burial',()=>note('burial','Escaped shallow burial'));
 on('bottle', (spares) => note('bottle', spares > 0 ? `Oxygen bottle empty — ${spares} spare${spares === 1 ? '' : 's'} left` : 'Last oxygen bottle empty — no O₂ left'));
 on('o2', (isOn, flow) => {
   const last = debrief.lastO2;

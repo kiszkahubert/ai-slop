@@ -31,7 +31,7 @@ The route follows the actual line of the South Col route:
 4. Up the Lhotse Face to Camp 3.
 5. Left across the Yellow Band and over the Geneva Spur to the South Col (Camp 4).
 6. The Triangular Face to the Balcony.
-7. Along the Southeast Ridge over the South Summit, the cornice traverse and the Hillary Step to the summit.
+7. Along the Southeast Ridge over the South Summit and the Hillary Step to the summit.
 
 The Lhotse branch turns right at the Yellow Band, goes to Lhotse Camp 4 and climbs the Reiss Couloir.
 
@@ -54,7 +54,8 @@ South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or
 Press **T** at any time to reopen the panel. It
 also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
 
-Survival systems are off in free viewing: no hypoxia, cold, falls or crevasses. Nothing is saved, so the expedition
+Survival systems are off in free viewing: no hypoxia, cold, natural slips or crevasse deaths. Manual physics experiments
+still move the body, with injuries and suffocation disabled. Nothing is saved, so the expedition
 you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.
 
 **Exit free viewing — climb on from here** (in the T panel) turns survival systems back on where you stand. It starts
@@ -69,7 +70,38 @@ hold you along the skis. Steer toward the way you want to go: **W** skates, **A*
 stop and **Shift** tucks. Press **X** again to take them off once you have slowed down. On a real expedition the
 mountain still bites: take a crevasse too slowly and you drop in, hit a serac fast and it hurts, and above ~120 km/h
 your skis may chatter loose. Skis are off-limits for fixed ropes and the route-following autopilot.
+
+Press **B** to release a small slab on a suitable snow slope roughly 150 m uphill. The Lhotse Face near Camp 3
+is a convenient place to try it. Dense snow follows the terrain, spreads, carries the climber and leaves temporary
+debris; fragments and powder follow the simulated flow. Releases are manual and do not occur randomly.
+In free viewing, **Shift+B** clears the experiment and restores your starting position; **J** starts a test fall.
+The **T** panel includes buttons for these experiments.
 </details>
+
+## Falls and avalanches
+
+Slips and ski crashes transfer the climber's momentum to an eleven-part articulated body. Contacts with the native
+terrain and nearby seracs cause sliding, rolling and impacts; conscious climbers brace, while fatal impacts leave a
+limp body that continues moving until it settles. The camera temporarily pulls back during a fall and restores your
+chosen view after recovery. Crevasses retain their separate fatal crossing rule.
+
+The detailed climber retains its down suit, helmet, axe and oxygen equipment. A pose adapter maps the simulated
+segment centres to its joint pivots, keeping equipment attached and the visible axe pick aligned with self-arrest.
+
+Hold **Space** to self-arrest: the axe must reach the slope, the climber must be facing into it and stamina is consumed.
+An early arrest works much better on snow than ice; it cannot stop an airborne body. Once stable, the climber blends
+back into the walking pose. Clipped falls stay attached to the fixed rope through the harness.
+
+Avalanches can cause impacts and burial during an expedition. Hold **Space** to dig out of shallow, settled burial
+(up to 0.6 m of snow over the head). Deep burial immobilizes the climber. Air lasts three game minutes, then health
+declines; the HUD shows depth and remaining air. Free viewing remains invulnerable and permits escape or reset.
+Pause and camp menus stop simulation. Moving snow and falls block saving; stable v2 expedition saves remain compatible.
+Debris and body state are temporary and cleared by loading or teleporting.
+
+Body physics uses Rapier 0.21.0 at a fixed 120 Hz in physical seconds, independent of the accelerated expedition clock.
+Snow uses a local 8 m, depth-averaged flow grid with conservative mass/momentum transport, slope gravity and Voellmy
+friction (dry friction plus velocity-squared resistance), stepped at 30 Hz with adaptive CFL substeps.
+This is a terrain-aware gameplay approximation, not a calibrated avalanche prediction model.
 
 ## The dead of the route (checkpoints)
 
@@ -182,13 +214,13 @@ What the renderer does:
 ES modules and the terrain files must be served over HTTP. Opening `index.html` from disk will not work.
 
 ```bash
-npm install              # dev tools: http-server, three (for offline use), Playwright, ESLint
+npm install              # Rapier physics + dev tools: http-server, Three.js, Playwright, ESLint
 npm start                # serves the folder on http://localhost:8000
 npm start -- 3000        # on another port (or PORT=3000 npm start)
 # or, without npm: python3 -m http.server 8000   (Windows: python -m http.server 8000)
 ```
 
-Then open <http://localhost:8000>. By default Three.js r160 is loaded from the jsDelivr CDN. To work fully
+Then open <http://localhost:8000>. By default Three.js r160 and Rapier 0.21.0 are loaded from the jsDelivr CDN. To work fully
 offline, open <http://localhost:8000/?localthree> instead, which uses the copy installed in `node_modules`.
 
 ## Controls
@@ -203,6 +235,9 @@ offline, open <http://localhost:8000/?localthree> instead, which uses the copy i
 | Shift+F | Same, without stopping at camps (e.g. all the way down from the summit to Camp 2… and on to Base Camp) |
 | O | Oxygen on/off · 1–4 or `[` `]` flow in L/min |
 | V | Third / first person · mouse wheel sets camera distance |
+| Space | Hold during a fall to self-arrest, or dig out of shallow avalanche burial |
+| B | Release an avalanche on a suitable uphill snow slope (easter egg) |
+| J / Shift+B | Free viewing or debug: test fall / reset physics experiment |
 | M | Enlarge the route map |
 | T | Free viewing only: teleport to a camp or summit, set the time of day, weather and walk speed, or exit and climb on from where you stand |
 | Esc | Pause |
@@ -225,18 +260,23 @@ src/
     terrainMaterial.js  triplanar rock / snow / ice / moraine layers, Yellow Band, relief normals, snow sparkle,
                       mountain shadows, Earth curvature
     route.js          route model, camps, fixed ropes, landmarks, region names
-    props.js          tents, wands, ropes, ladders & crevasses, seracs, Hillary Step, cornice, flags, peak name tags
+    props.js          tents, wands, ropes, ladders & crevasses, seracs, Hillary Step, flags, peak name tags
     baseCamp.js       Base Camp tent city, glacier relief, ice towers, melt ponds, Crampon Point
     environment.js    sky, sun path, stars, headlamp, fog, valley mist, wind-blown snow, eye adaptation
   sim/
     game.js           game state, progress, camps, save/load
     physiology.js     SpO₂, acclimatization, death zone, oxygen, frostbite, exhaustion
     player.js         movement, ropes, crevasses, slips & falls, route-following autopilot
+    body.js, physics.js articulated body, streamed terrain contacts, rope tether, arrest, impact and burial
+    avalanche.js      seeded dense-flow snow simulation and release search
+    surface.js        temporary snow-deposit walking surface
     weather.js        jet stream, storms, summit windows, wind / temperature / visibility
     step.js           one simulation tick (also used by the tests)
     debrief.js        expedition telemetry and the end-of-climb analysis / verdicts
   render/
-    climber.js        the climber: rounded-shape rig, down suit, harness, pack, oxygen set, animation
+    climber.js        detailed articulated rig, down suit, equipment, walking / physics / recovery poses
+    bodyPose.js       world-space physical segment centres to detailed joint pivots; recovery blending
+    avalanche.js      simulated snow surface, fragments and powder
     helmet.js         helmet shell, vents, chin strap and the logo decals
     iceAxe.js         ice axe: curved shaft, toothed pick, adze, spike, grip, leash
     camera.js         third / first person camera rig
@@ -296,15 +336,15 @@ active assets, so use it only when deliberately restoring the legacy terrain.
 
 ```bash
 npm run lint                   # ESLint (eslint.config.js)
-npm run test:unit              # fast node:test suites: physiology, weather, route model, spatial index, saves
+npm run test:unit              # node:test: falls, flow, burial, physiology, routes, spatial index, saves
 npm run test:terrain           # Python regressions: GeoTIFF alignment, NoData, geoid conversion, asset metadata
 npm run verify:terrain         # with source files in dem/: verify encoded heights and complete route coverage
-npm run test:e2e               # Playwright: hazards, UI, free viewing, skis, full Everest, Lhotse and Nuptse expeditions
+npm run test:e2e               # Playwright: graphics / GPU overflow, physics, hazards, UI, skis, all three expeditions
 npm test                       # unit + e2e
 node tests/harness.mjs tests/hazards.json   # a single e2e suite
 ```
 
-The e2e harness serves three.js from `node_modules` when it is installed (override with `THREE_DIR`), so it runs
+The e2e harness serves Three.js and Rapier from `node_modules` (override Three.js with `THREE_DIR`), so it runs
 offline. Software (SwiftShader) rendering makes screenshots slow, so each one may take up to `SHOT_TIMEOUT` ms
 (default 120000). There is no CI: run `npm run lint` and `npm test` before pushing.
 
@@ -317,6 +357,8 @@ must end with a win. The hazard tests check three things:
 Add `?debug` to the URL for test keys: `T`/`G` teleport between waypoints, `K` advances one hour, and `,`/`.`
 lower/raise the walk speed (×0.25–×32). `window.__sim`
 exposes a small API.
+`triggerAvalanche({seed, source})`, `forceFall({velocity, heightOffset})`, `stepPhysics(dt, {arrest})` and
+`resetPhysics()` support reproducible physics experiments. `VIDEO=1` records an e2e suite under `tests/out/`.
 
 ## Data
 

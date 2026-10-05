@@ -62,5 +62,6 @@ export function createIceAxe({ envMap = null } = {}) {
 
   for (const m of [shaft, grip, spike, head, pickMesh, adzeMesh, leash, slider]) { m.castShadow = true; g.add(m); }
   g.userData.metals = [steel, alu];
+  g.userData.pickTip = new THREE.Vector3(0, -0.05, -0.195);
   return g;
 }

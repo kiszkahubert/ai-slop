@@ -19,7 +19,9 @@ import { SHARED, patchSceneMaterials } from './render/shared.js';
 import { on } from './core/events.js';
 import { smoothstep } from './core/math.js';
 import { CameraRig } from './render/camera.js';
-import { game, newGame, restHours, placePlayer, setSpeedMul } from './sim/game.js';
+import { game, newGame, restHours, placePlayer, setSpeedMul, die, refreshConditions } from './sim/game.js';
+import { PhysicsScene, initPhysics } from './sim/physics.js';
+import { AvalancheView } from './render/avalanche.js';
 import { toggleSkis } from './sim/ski.js';
 import { simStep } from './sim/step.js';
 import { stepPhysiology } from './sim/physiology.js';
@@ -56,7 +58,7 @@ const resize = () => {
 };
 addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig, postfx, terrainMat, relief, layerSize, reliefKey;
+let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -88,6 +90,10 @@ async function boot() {
   backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Fixing ropes, ladders and camps…');
   game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan });
+  await step('Preparing fall and snow physics…');
+  await initPhysics();
+  game.physics = new PhysicsScene(game, { die });
+  avalancheView = new AvalancheView(scene);
   env = new Environment(scene, renderer, { quality, field, macroShadow });
   climber = createClimber(scene, { renderer });
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
@@ -113,8 +119,10 @@ function frame(now) {
     const n = game.auto ? FAST_FORWARD : 1;
     for (let k = 0; k < n && game.mode === 'play'; k++) simStep(dt, ctl);
   }
-  climber.update(dt, game.P, game.S);
+  if (game.mode === 'dead' && game.physics?.hasMotion()) game.physics.step(dt);
+  climber.update(dt, game.P, game.S, game.physics);
   rig.update(dt, simTime, game, climber);
+  avalancheView.update(game.mode==='play'||game.mode==='dead'?dt:0, game.physics, camera);
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
@@ -123,10 +131,11 @@ function frame(now) {
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
   terrain.update(camera.position, 3);
   backdrop.update(camera.position, 2);
-  if (game.mode === 'play' || game.mode === 'camp') updateHUD(dt);
+  if (game.mode === 'play' || game.mode === 'camp' || game.mode === 'paused') updateHUD(dt);
   updateAudio(dt);
   const tr = performance.now();
-  postfx.render({ free: game.free, focus: game.view.fp ? 30 : rig.dist });
+  const firstPerson = game.view.fp && !game.P.falling && !game.P.recovery;
+  postfx.render({ free: game.free, focus: firstPerson ? 30 : rig.dist });
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
 }
@@ -170,6 +179,11 @@ on('setQuality', setQuality);
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
   get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  triggerAvalanche: (options) => game.physics.triggerAvalanche(options),
+  forceFall: (options) => game.physics.startFall({ reason: 'test', ...options }),
+  resetPhysics: () => { const ok = game.physics.resetExperiment(); refreshConditions(); return ok; },
+  stepPhysics: (dt, control) => game.physics.step(dt, control),
+  get avalancheView() { return avalancheView; },
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

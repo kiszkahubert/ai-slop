@@ -10,6 +10,11 @@ return (async () => {
   const click = (sel) => { const b = document.querySelector(sel); if (!b) throw new Error('missing ' + sel); b.click(); };
   const key = (code) => { window.dispatchEvent(new KeyboardEvent('keydown', { code })); window.dispatchEvent(new KeyboardEvent('keyup', { code })); };
   const frame = () => new Promise((r) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 300));   // the HUD redraws every 0.1 s
+  const hudReady = async (text) => {
+    const until = performance.now() + 30000;
+    while (!document.getElementById('hStatus').textContent.includes(text) && performance.now() < until) await frame();
+    if (!document.getElementById('hStatus').textContent.includes(text)) throw new Error('HUD did not show ' + text);
+  };
   const walk = (s, ctl) => { let t = 0; while (t < s && W.simStep(1 / 30, ctl)) t += 1 / 30; };
   // ---- walk speed: 2 s across Base Camp at ×1, then at ×4 ([.] twice with ?debug)
   const ebc = g.camps.find((c) => c.id === 'ebc');
@@ -21,7 +26,7 @@ return (async () => {
   const d1 = dist(1); key('Period'); key('Period');
   out.speedKey = g.speedMul;
   W.teleport(ebc.x, ebc.z); { const x0 = g.P.x; walk(2, { dx: 1, dz: 0 }); out.speedRatio = +(Math.abs(g.P.x - x0) / d1).toFixed(2); }
-  await frame();
+  await hudReady('Walk speed ×4');
   out.pill = document.getElementById('hStatus').textContent;
   W.setSpeedMul(1);
   // ---- free viewing → teleport to the South Col → exit free viewing, staying put
@@ -41,7 +46,7 @@ return (async () => {
   out.skisOn = !!g.P.ski;
   const y0 = g.P.y; let vmax = 0;
   for (let t = 0; t < 20 && W.simStep(1 / 30, { dx: 0, dz: 0 }); t += 1 / 30) vmax = Math.max(vmax, g.P.ski.speed);
-  await frame();
+  await hudReady('Skis');
   out.ski = { drop: Math.round(y0 - g.P.y), vmaxKmh: Math.round(vmax * 3.6), mode: g.mode, pill: document.getElementById('hStatus').textContent.includes('Skis') };
   key('KeyF'); out.autopilotRefused = !g.auto;
   // brake (hold back) until slow, then take the skis off

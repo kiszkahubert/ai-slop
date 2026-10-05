@@ -1,13 +1,14 @@
 // Climber movement on the real terrain: slope-dependent speed, fixed ropes, ladders over
 // crevasses, seracs, slips and falls, and the route-following autopilot.
 import { MOVE, SLIP_ANGLE } from '../config.js';
-import { clamp, lerp, smoothstep, D2R, fmt, wrapAngle } from '../core/math.js';
+import { clamp, smoothstep, D2R, wrapAngle } from '../core/math.js';
 import { emit, toast } from '../core/events.js';
 import { crevasseLocal } from '../world/props.js';
 import { SegmentIndex } from '../core/spatial.js';
 import { game, die, nearCamp, region, speedFactor } from './game.js';
 import { hypF, maxStamina, packLoad } from './physiology.js';
 import { CLIMBS } from '../world/route.js';
+import { groundHeight } from './surface.js';
 
 // ---------------- fixed ropes
 let ropeIndex = null, ropeIndexFor = null;
@@ -56,8 +57,8 @@ export function seracCollide(x, z) {
 
 // ---------------- interaction (E)
 export function interact() {
+  if(game.P.falling || (game.physics?.avalanche && !game.physics.avalanche.settled)) { toast('Find safety before opening a camp or changing ropes.', 'warn', 3); return; }
   const P = game.P;
-  if (P.falling) return;
   const camp = nearCamp(P.x, P.z);
   if (camp) { emit('openCamp', camp); return; }
   if (P.ski) { toast('You cannot clip into a rope with skis on — [X] takes them off.', 'warn', 3); return; }
@@ -74,6 +75,7 @@ export function interact() {
 // ---------------- autopilot: follow the marked route, clipping into ropes, at FAST_FORWARD speed
 /** F: follow the route, stopping at camps. Shift+F (nonstop): only stop at the end of the route. */
 export function startAutopilot({ nonstop = false, routeName = null, direction = null } = {}) {
+  if(game.P.falling || (game.physics?.avalanche && !game.physics.avalanche.settled)) return false;
   const { P, routes, view } = game;
   if (P.ski) { toast('Take your skis off [X] to follow the route.', 'warn', 3); return false; }
   const fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw);
@@ -147,13 +149,13 @@ function autopilotControl() {
 /** ctl: { dx, dz, sprint } world-space direction (unit or zero), or null for autopilot */
 export function updatePlayer(dt, ctl) {
   const { P, S, field } = game;
-  if (P.falling) return updateFall(dt);
+  if (P.falling || P.recovery) return;
   if (game.auto) ctl = autopilotControl() || { dx: 0, dz: 0 };   // manual input cancels it (see step.js)
   let dx = ctl ? ctl.dx : 0, dz = ctl ? ctl.dz : 0;
   P.moving = !!(dx || dz); P.sprint = false; P.grade = 0; P.onLadder = false;
   if (P.moving) {
     const sprint = !!ctl.sprint && S.stamina > 4 && !S.winded;
-    const h0 = field.height(P.x, P.z), grade = (field.height(P.x + dx * 1.5, P.z + dz * 1.5) - h0) / 1.5;
+    const h0 = groundHeight(game,P.x,P.z), grade = (groundHeight(game,P.x + dx * 1.5,P.z + dz * 1.5) - h0) / 1.5;
     P.grade = grade;
     const slopeF = grade > 0 ? 1 / (1 + MOVE.uphill * grade) : 1 / (1 + MOVE.downhill * -grade);
     const weightF = clamp(1 - (packLoad(S) - 14) / 80, 0.65, 1);
@@ -182,7 +184,7 @@ export function updatePlayer(dt, ctl) {
       }
     }
     if (P.onLadder) { nx = P.x + (nx - P.x) * 0.45; nz = P.z + (nz - P.z) * 0.45; }
-    const hn = field.height(nx, nz), stepGrade = (hn - h0) / Math.max(0.01, Math.hypot(nx - P.x, nz - P.z));
+    const hn = groundHeight(game,nx,nz), stepGrade = (hn - h0) / Math.max(0.01, Math.hypot(nx - P.x, nz - P.z));
     if (stepGrade > MOVE.maxGrade && P.clipped < 0 && !game.free) { emit('prompt', 'Too steep to climb here — find the route or a fixed rope', 1.2); nx = P.x; nz = P.z; }
     [nx, nz] = seracCollide(nx, nz);
     if (P.clipped >= 0) {
@@ -197,6 +199,7 @@ export function updatePlayer(dt, ctl) {
     }
     nx = clamp(nx, field.x0 + 100, field.x1 - 100); nz = clamp(nz, field.z0 + 100, field.z1 - 100);
     S.distance += Math.hypot(nx - P.x, nz - P.z);
+    P.velocity={x:(nx-P.x)/dt,y:(hn-h0)/dt,z:(nz-P.z)/dt};
     P.x = nx; P.z = nz;
     P.facing = Math.atan2(-dx, -dz);
     P.phase += dt * v3 * 1.9;
@@ -215,6 +218,7 @@ export function updatePlayer(dt, ctl) {
       }
     }
   } else {
+    P.velocity={x:0,y:0,z:0};
     S.stamina += 14 * (0.3 + 0.7 * smoothstep(55, 92, S.spo2)) * dt;
     P.phase *= 0.9;
     if (P.clipped < 0 && !game.free && field.slope(P.x, P.z).mag > 2.2 && Math.random() < 0.6 * dt) startFall();
@@ -222,58 +226,10 @@ export function updatePlayer(dt, ctl) {
   if (S.stamina <= 0) { S.stamina = 0; if (!S.winded) toast('Out of breath — stop and recover.', 'warn'); S.winded = true; }
   if (S.winded && S.stamina > 25) S.winded = false;
   S.stamina = clamp(S.stamina, 0, maxStamina(S));
-  P.y = field.height(P.x, P.z);
+  if(!P.falling) P.y = groundHeight(game,P.x,P.z);
 }
 
 // ---------------- falls
 export function startFall() {
-  const P = game.P;
-  P.falling = { vx: 0, vz: 0, v: 0, startY: P.y, maxV: 0, t: 0, arrestTried: false, region: region().replace(/^(Camp|Lhotse Camp) \d.*/, 'route') };
-  game.S.falls++;
-  emit('fall', P.falling.region, P.y);
-  if (game.auto) game.auto = null;
-  toast('You slipped! Self-arrest…', 'bad', 3);
-}
-
-function updateFall(dt) {
-  const { P, S, field } = game, f = P.falling;
-  f.t += dt;
-  const sl = field.slope(P.x, P.z, 2), ang = Math.atan(sl.mag), g = 9.81, mu = 0.3;
-  if (sl.mag > 1e-3) {
-    const ux = -sl.gx / sl.mag, uz = -sl.gz / sl.mag;
-    f.v = Math.max(0, f.v + g * (Math.sin(ang) - mu * Math.cos(ang)) * dt);
-    const vh = f.v * Math.cos(ang);
-    f.vx = lerp(f.vx, ux * vh, 0.3); f.vz = lerp(f.vz, uz * vh, 0.3);
-  } else f.v = Math.max(0, f.v - g * mu * dt);
-  P.x = clamp(P.x + f.vx * dt, field.x0 + 100, field.x1 - 100); P.z = clamp(P.z + f.vz * dt, field.z0 + 100, field.z1 - 100);
-  P.y = field.height(P.x, P.z);
-  f.maxV = Math.max(f.maxV, f.v);
-  let drop = f.startY - P.y;
-  if (!f.arrestTried && f.t > 0.7) {
-    f.arrestTried = true;
-    const chance = clamp(0.75 - (ang / D2R - 40) / 30, 0.05, 0.75) * (0.4 + 0.6 * hypF(S)) * (S.stamina > 10 ? 1 : 0.5);
-    if (Math.random() < chance) {
-      P.falling = null;
-      const dmg = 4 + drop * 0.6;
-      S.health -= dmg;
-      toast(`Self-arrest! You dug in your ice axe after ${fmt(Math.max(1, drop))} m (−${fmt(dmg)} health). Clip into the ropes!`, 'warn', 5);
-      if (S.health <= 0) die(`Fell on the ${f.region} and did not survive the injuries.`);
-      return;
-    }
-  }
-  if (drop > 180 || f.maxV > 40) {
-    for (let k = 0; k < 6000; k++) {            // let the body come to rest
-      const s2 = field.slope(P.x, P.z, 2); if (s2.mag < 0.4) break;
-      P.x = clamp(P.x - (s2.gx / s2.mag) * 0.5, field.x0 + 100, field.x1 - 100); P.z = clamp(P.z - (s2.gz / s2.mag) * 0.5, field.z0 + 100, field.z1 - 100);
-    }
-    P.y = field.height(P.x, P.z); drop = f.startY - P.y;
-    die(`Fell ${fmt(drop)} m down the ${f.region}.`);
-    return;
-  }
-  if ((f.v < 0.6 && ang < 32 * D2R && f.t > 0.4) || f.t > 30) {
-    const dmg = Math.max(0, drop - 10) * 1.1 + Math.max(0, f.maxV - 14) * 3;
-    P.falling = null; S.health -= dmg;
-    if (S.health <= 0) { die(`Fell ${fmt(drop)} m on the ${f.region} and did not survive the injuries.`); return; }
-    toast(drop > 3 ? `Stopped after ${fmt(drop)} m. Injured (−${fmt(dmg)} health).` : 'Self-arrest! You stopped yourself.', dmg > 0 ? 'bad' : 'warn', 5);
-  }
+  return game.physics?.startFall({region:region().replace(/^(Camp|Lhotse Camp) \d.*/, 'route')});
 }
