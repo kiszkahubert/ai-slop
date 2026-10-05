@@ -5,10 +5,18 @@ import { CoreField, BackdropField } from './world/heightfield.js';
 import { loadRoutes, campsFor, CLIMBS } from './world/route.js';
 import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
-import { createTerrainMaterial } from './world/terrainMaterial.js';
+import { createTerrainMaterial, updateTerrainMaterial } from './world/terrainMaterial.js';
 import { buildProps } from './world/props.js';
 import { Environment } from './world/environment.js';
-import { makeClimber } from './render/climber.js';
+import { createClimber } from './render/climber.js';
+import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality } from './render/quality.js';
+import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/proceduralTextures.js';
+import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
+import { installAtmosphericFog } from './render/atmosphere.js';
+import { setupPostProcessing } from './render/postfx.js';
+import { SHARED, patchSceneMaterials } from './render/shared.js';
+import { on } from './core/events.js';
+import { smoothstep } from './core/math.js';
 import { CameraRig } from './render/camera.js';
 import { game, newGame, restHours, placePlayer, setSpeedMul } from './sim/game.js';
 import { toggleSkis } from './sim/ski.js';
@@ -28,18 +36,26 @@ const canvas = document.getElementById('gl');
 const loadMsg = document.getElementById('loadMsg');
 const step = (t) => new Promise((r) => { loadMsg.textContent = t; setTimeout(r, 20); });
 
+let qualityName = initialQuality(), quality = QUALITY_PRESETS[qualityName];
+setCurrentQuality(qualityName);
+installAtmosphericFog();
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 150000);
 camera.rotation.order = 'YXZ';
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+const resize = () => {
+  renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  if (postfx) { const s = renderer.getDrawingBufferSize(new THREE.Vector2()); postfx.setSize(s.x, s.y); }
+};
+addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig;
+let env, terrain, backdrop, climber, rig, postfx, terrainMat, relief, layerSize, reliefKey;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -54,14 +70,26 @@ async function boot() {
   field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)));
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
+  await step('Painting rock, snow and ice…');
+  const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy());
+  layerSize = quality.textureSize;
+  await step('Shading the relief…');
+  relief = createReliefTexture(field, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
+  const macroShadow = new MacroShadow(field, 32);
+  SHARED.uMacroShadow.value = macroShadow.texture;
   await step('Building terrain chunks…');
-  const mat = createTerrainMaterial();
-  terrain = new TerrainLOD(scene, mat, field, coreTerrainOptions());
-  backdrop = new TerrainLOD(scene, mat, back, backdropTerrainOptions(field));
+  terrainMat = createTerrainMaterial({
+    layers, macroNoise: createMacroNoiseTexture(), relief: relief.texture, reliefRect: relief.rect,
+    microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512, exactGradients: quality.exactGradients,
+  });
+  terrain = new TerrainLOD(scene, terrainMat, field, coreTerrainOptions());
+  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Fixing ropes, ladders and camps…');
   game.world = buildProps(scene, field, routes, game.camps);
-  env = new Environment(scene, renderer);
-  climber = makeClimber(scene);
+  env = new Environment(scene, renderer, { quality, field, macroShadow });
+  climber = createClimber(scene, { renderer });
+  patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
+  postfx = setupPostProcessing(renderer, scene, camera, quality);
   rig = new CameraRig(camera);
   newGame(1);
   initToasts(); initHUD(canvas); initScreens(canvas); initAudio();
@@ -83,19 +111,20 @@ function frame(now) {
     const n = game.auto ? FAST_FORWARD : 1;
     for (let k = 0; k < n && game.mode === 'play'; k++) simStep(dt, ctl);
   }
-  climber.update(dt, game.P);
+  climber.update(dt, game.P, game.S);
   rig.update(dt, simTime, game, climber);
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
     labels: [...game.camps.map((c) => c.label), ...game.world.labels],
   });
+  climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
   terrain.update(camera.position, 3);
   backdrop.update(camera.position, 2);
   if (game.mode === 'play' || game.mode === 'camp') updateHUD(dt);
   updateAudio(dt);
   const tr = performance.now();
-  renderer.render(scene, camera);
+  postfx.render({ free: game.free, focus: game.view.fp ? 30 : rig.dist });
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
 }
@@ -116,8 +145,29 @@ function debugKey(code) {
   }
   if (code === 'KeyK') { game.time += 1; stepPhysiology(game, 1, { moving: false, sprint: false, grade: 0 }); }
 }
+// ---------------- graphics quality (Low / Medium / High): applied live, nothing in the simulation changes
+function setQuality(name) {
+  const q = QUALITY_PRESETS[name];
+  if (!q || !terrainMat) return false;
+  qualityName = name; quality = q; rememberQuality(name); setCurrentQuality(name);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+  resize();
+  env.applyQuality(q);
+  postfx.configure(q);
+  const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
+  if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
+  if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
+    relief = createReliefTexture(game.field, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
+    opts.relief = relief.texture; opts.reliefRect = relief.rect;
+  }
+  updateTerrainMaterial(terrainMat, opts);
+  return true;
+}
+on('setQuality', setQuality);
+
 const api = {
-  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul,
+  game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
+  get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

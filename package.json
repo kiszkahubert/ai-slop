@@ -12,7 +12,7 @@
     "start:offline": "node tools/start.mjs --offline",
     "lint": "eslint .",
     "test:unit": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "node tests/harness.mjs tests/terrain.json && node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/memorials.json && node tests/harness.mjs tests/extras.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json && node tests/harness.mjs tests/expedition_nuptse.json",
+    "test:e2e": "node tests/harness.mjs tests/terrain.json && node tests/harness.mjs tests/graphics.json && node tests/harness.mjs tests/postfx_nan.json && node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/memorials.json && node tests/harness.mjs tests/extras.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json && node tests/harness.mjs tests/expedition_nuptse.json",
     "test": "npm run test:unit && npm run test:e2e",
     "build-assets": "node tools/run-python.mjs tools/build_pleiades_assets.py",
     "build-route:nuptse": "node tools/run-python.mjs tools/build_nuptse_route.py",
