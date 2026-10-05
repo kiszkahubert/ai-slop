@@ -92,6 +92,9 @@ export function updateHUD(dt) {
   // status
   const pills = [], ropes = game.world.ropes;
   if (game.free) pills.push('<span class="pill on">Free viewing · [T] teleport</span>');
+  if(P.falling) pills.push(`<span class="pill alert">${P.falling.arresting?'Ice axe engaged':'Falling'} · ${Math.round(P.falling.maxV*3.6)} km/h</span>`);
+  const burial=game.physics?.burial;
+  if(burial) pills.push(`<span class="pill alert">Buried · ${burial.cover.toFixed(1)} m${game.free?'':` · air ${Math.ceil(burial.air)} s`}</span>`);
   if (P.ski) pills.push(`<span class="pill on">⛷ Skis · ${Math.round(P.ski.speed * 3.6)} km/h${P.ski.tuck ? ' · tuck' : P.ski.brake ? ' · snowplough' : ''}</span>`);
   if (speedFactor() !== 1) pills.push(`<span class="pill">Walk speed ×${game.speedMul}</span>`);
   if (P.clipped >= 0) pills.push(`<span class="pill on">Clipped: ${ropes[P.clipped].name}</span>`);
@@ -126,11 +129,15 @@ export function updateHUD(dt) {
       }
     }
   }
+  if(P.falling) pr=burial ? (burial.shallow||game.free?'Hold SPACE to dig out': 'Deep burial — unable to dig out') : 'Hold SPACE to plant your ice axe and self-arrest';
+  if(game.free && burial) pr+=' · Shift+B resets the experiment';
   if (el.prompt.textContent !== pr) el.prompt.textContent = pr;
+  $('crosshair').classList.toggle('hidden',!game.view.fp || !!(P.falling || P.recovery));
+  $('burialOverlay').style.opacity=burial?clamp(burial.cover/1.5,0,.85):0;
   drawGauge();
   minimap.draw();
   // hypoxia: blur, desaturation, tunnel vision; frost rime at the edges
-  const blur = clamp((76 - S.spo2) / 5, 0, 4) + (P.falling ? 1 : 0), sat = 1 - clamp((72 - S.spo2) / 40, 0, 0.55);
+  const blur = clamp((76 - S.spo2) / 5, 0, 4), sat = 1 - clamp((72 - S.spo2) / 40, 0, 0.55);
   const filt = blur > 0.05 || sat < 0.99 ? `blur(${blur.toFixed(1)}px) saturate(${sat.toFixed(2)})` : 'none';
   if (el.canvas.style.filter !== filt) el.canvas.style.filter = filt;
   $('vignette').style.opacity = clamp((82 - S.spo2) / 30, 0, 0.85) + (S.health < 30 ? 0.2 : 0);

@@ -7,6 +7,8 @@
 //   CHROMIUM     path to a Chromium binary (default: Playwright's)
 //   SHOTS        directory for screenshots (default: tests/out)
 //   SHOT_TIMEOUT screenshot timeout in ms (default: 120000)
+//   VIDEO        set to 1 to save a browser recording under SHOTS
+//   NO_SHOTS     set to 1 to skip screenshots while retaining all assertions
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = await import(process.env.PLAYWRIGHT || 'playwright');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
+TYPES['.mjs'] = 'text/javascript';
 
 const server = http.createServer((req, res) => {
   let p = path.join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname));
@@ -35,7 +38,8 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || undefined,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
-const page = await browser.newPage({ viewport: { width: Number(process.env.W || 1280), height: Number(process.env.H || 720) } });
+const viewport={width:Number(process.env.W || 1280),height:Number(process.env.H || 720)};
+const page = await browser.newPage({ viewport, ...(process.env.VIDEO ? {recordVideo:{dir:shots,size:viewport}} : {}) });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); console.log(`[${m.type()}]`, m.text()); });
 page.on('pageerror', (e) => { errors.push(e.message); console.log('[pageerror]', e.message); });
@@ -47,6 +51,10 @@ if (threeDir) {
     r.fulfill({ path: path.join(threeDir, rel), contentType: 'text/javascript' });
   });
 }
+await page.route('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/**', (r) => {
+  const rel=new URL(r.request().url()).pathname.replace('/npm/@dimforge/rapier3d-compat@0.21.0/', '');
+  return r.fulfill({ path: path.join(root,'node_modules/@dimforge/rapier3d-compat',rel),contentType:'text/javascript' });
+});
 await page.goto(`http://localhost:${port}/${process.env.Q || '?debug'}`);
 await page.waitForFunction(() => window.__sim && window.__sim.game.mode === 'title', null, { timeout: 180000 });
 for (const a of actions) {
@@ -60,7 +68,13 @@ for (const a of actions) {
   }
   if (a.key) { await page.keyboard.down(a.key); await page.waitForTimeout(a.hold || 50); await page.keyboard.up(a.key); }
   if (a.wait) await page.waitForTimeout(a.wait);
-  if (a.shot) await page.screenshot({ path: path.join(shots, a.shot), timeout: SHOT_TIMEOUT });
+  if (a.shot && !process.env.NO_SHOTS) await page.screenshot({ path: path.join(shots, a.shot), timeout: SHOT_TIMEOUT });
+}
+const video=page.video();
+await page.close();
+if(video) {
+  const destination=path.join(shots,path.basename(process.argv[2],'.json')+'.webm');
+  await video.saveAs(destination);await video.delete();console.log('[video]',destination);
 }
 await browser.close();
 server.close();

@@ -184,7 +184,7 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
     world.seracGrid.get(key).push({ x, z, r: w * 0.85 });
   }
 
-  // ---------------- Hillary Step (rock step beside the ridge track) and the summit-ridge cornice
+  // ---------------- Hillary Step (rock step beside the ridge track)
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x57514a, roughness: 0.95, flatShading: true });
   const rocks = instanced(scene, new THREE.DodecahedronGeometry(1, 0), rockMat, 40);
   const hs = m.s('hillary');
@@ -193,7 +193,6 @@ export function buildProps(scene, field, routes, camps, seed = 5) {
     const x = p.x - p.dz * off, z = p.z + p.dx * off;
     add(rocks, x, H(x, z) + 0.5, z, r() * 6, 1.4 + r() * 1.4, 1.5 + r() * 2.5, 1.2 + r());
   }
-  cornice(scene, field, m, m.s('southsummit'), hs);
 
   finish(tents, mess, bottles, poles, flags, rungs, seracs, rocks);
   world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
@@ -256,28 +255,6 @@ function ladder(field, cv, rungs) {
   for (const o of [-0.3, 0.3]) { const c = A.clone().add(B).multiplyScalar(0.5).addScaledVector(sideN, o); add(rungs, c.x, c.y, c.z, 0, len, 0.07, 0.05, null, q); }
   for (let t = 0.15; t < len; t += 0.32) { const c = A.clone().addScaledVector(dir, t); add(rungs, c.x, c.y + 0.01, c.z, 0, 0.04, 0.04, 0.62, null, q); }
   cv.ladderA = A; cv.ladderB = B;
-}
-
-function cornice(scene, field, route, s0, s1) {
-  // wind-sculpted snow overhanging the Kangshung (east) side of the summit ridge
-  const pos = [], idx = []; let k = 0;
-  for (let s = s0; s <= s1; s += 2) {
-    const p = route.at(s);
-    let ex = p.dz, ez = -p.dx;               // right-hand normal of the ridge direction
-    if (ex < 0) { ex = -ex; ez = -ez; }       // make it point east
-    const x0 = p.x + ex * 1.8, z0 = p.z + ez * 1.8, y0 = field.height(x0, z0);
-    const ring = [[1.8, 0.1], [3.2, 0.9], [5.2, 0.8], [6.0, 0.1], [4.4, -1.2], [2.4, -1.4]];
-    for (const [o, dy] of ring) { const x = p.x + ex * o, z = p.z + ez * o; pos.push(x, y0 + dy, z); }
-    if (k > 0) for (let a = 0; a < 6; a++) {
-      const b = (a + 1) % 6, i0 = (k - 1) * 6;
-      idx.push(i0 + a, i0 + 6 + a, i0 + b, i0 + b, i0 + 6 + a, i0 + 6 + b);
-    }
-    k++;
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xf2f6fb, roughness: 0.7, side: THREE.DoubleSide }));
-  mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
 }
 
 // The dead of the route (see memorials.js): a cairn with prayer flags, or a shrouded figure off the trail where the

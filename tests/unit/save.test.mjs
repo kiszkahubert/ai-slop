@@ -40,6 +40,13 @@ test('free viewing never writes the expedition save', () => {
   save(true);
   assert.equal(store.has(KEY), false);
 });
+test('transient falls and moving avalanches cannot overwrite a stable save', () => {
+  newGame(9);save(true);const original=store.get(KEY);
+  game.P.falling={t:1};game.S.health=12;save(true);assert.equal(store.get(KEY),original);
+  game.P.falling=null;game.physics={avalanche:{settled:false},reset:()=>{game.physics=null;}};
+  save(true);assert.equal(store.get(KEY),original);
+  assert.equal(load(),true);assert.equal(game.P.falling,null);assert.equal(game.S.health,100);
+});
 
 test('old v2 saves gain Nuptse progress and camp stock without losing the expedition', () => {
   newGame(10); save(true);

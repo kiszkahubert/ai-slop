@@ -24,6 +24,7 @@ export function simStep(dt, ctl) {
     refreshConditions();
   }
   if (game.P.ski && !game.P.falling) updateSki(dt, ctl); else updatePlayer(dt, ctl);
+  game.physics?.step(dt, ctl);
   if (game.mode !== 'play') return false;
   const P = game.P;
   if (game.free) {                      // free viewing: no physiology, always fit and well
