@@ -139,6 +139,27 @@ death marked, an oxygen strip along the bottom and a hover tooltip for any momen
 - a decision-by-decision journal of camps, rests, oxygen changes, bottle swaps and slips;
 - the key numbers of the expedition and its score.
 
+## Base Camp and the skyline
+
+**Everest Base Camp** is the tent city of the climbing season. About fifty expedition compounds are spread over the
+rubble-covered Khumbu Glacier, along the strip from the Icefall foot (the camp you rest at) to the published Base Camp
+position (28.0072°N, 86.8594°E, 5,364 m). Each compound has colour-coded sleeping tents on stone platforms, a dining
+dome or mess tent, a stone-walled kitchen under a tarp, a puja altar (lhap-so) strung with prayer flags, toilet tents,
+solar panels and fuel barrels. At the trekkers' end (toward Gorak Shep) stands the painted "Everest Base Camp 5364m"
+boulder, buried in prayer flags, with a helipad nearby. Compound sites are chosen from the terrain itself: gentle
+glacier ground at base-camp altitude, away from the route.
+
+**The walk to the Icefall** crosses debris-covered glacier: hummocks, troughs and melt ponds (added to the glacier
+surface, which the elevation data shows too smooth here) and clusters of white ice towers that are solid like the
+seracs. It ends at **Crampon Point**, where the fixed lines into the Icefall begin. The trail itself, the camp
+terraces and the slip-risk surface are unchanged.
+
+**Name tags on the skyline**: every real summit in view carries a tag on its rendered top (snapped to the highest
+point of the terrain near its surveyed position, and lowered with the Earth's curvature like the terrain):
+Pumori, Lingtren, Khumbutse, Changtse, Kala Patthar, Lhotse Shar, Lobuche East, Cholatse, Taboche, Ama Dablam,
+Island Peak, Baruntse, Makalu, Chomo Lonzo, Kangtega, Thamserku, Cho Oyu and Gyachung Kang (plus the route's own
+Everest, Lhotse and Nuptse). The peak list is in `src/world/geo.js`.
+
 ## Graphics
 
 Choose **Low**, **Medium** or **High** under *Graphics* on the title or pause screen (or add `?quality=low|medium|high` to
@@ -239,7 +260,8 @@ src/
     terrainMaterial.js  triplanar rock / snow / ice / moraine layers, Yellow Band, relief normals, snow sparkle,
                       mountain shadows, Earth curvature
     route.js          route model, camps, fixed ropes, landmarks, region names
-    props.js          tents, wands, ropes, ladders & crevasses, seracs, Hillary Step, flags
+    props.js          tents, wands, ropes, ladders & crevasses, seracs, Hillary Step, flags, peak name tags
+    baseCamp.js       Base Camp tent city, glacier relief, ice towers, melt ponds, Crampon Point
     environment.js    sky, sun path, stars, headlamp, fog, valley mist, wind-blown snow, eye adaptation
   sim/
     game.js           game state, progress, camps, save/load

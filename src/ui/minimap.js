@@ -50,6 +50,7 @@ export class Minimap {
       g.fillStyle = '#d9dee5'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(a, b - 4); g.lineTo(a + 4, b); g.lineTo(a, b + 4); g.lineTo(a - 4, b); g.closePath(); g.fill(); g.stroke();
     }
     for (const pk of PEAKS) {
+      if (pk.minor) continue;
       const [a, b] = this.toPx(pk.x, pk.z); if (a < 0 || a > W || b < 0 || b > H) continue;
       g.fillStyle = '#111'; g.beginPath(); g.moveTo(a, b - 7); g.lineTo(a - 6, b + 4); g.lineTo(a + 6, b + 4); g.fill();
       const t = `${pk.name} ${fmt(pk.e)}`; label(t, Math.min(a + 8, W - g.measureText(t).width - 4), b + 4);
