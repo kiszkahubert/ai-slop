@@ -61,6 +61,11 @@ const COMPOSITE_FRAG = `
   varying vec2 vUv; uniform sampler2D tColor; uniform sampler2D tAO; uniform float uUseAO; uniform float uVignette; uniform float uAspect;
   void main() {
     vec4 c = texture2D( tColor, vUv );
+    // A mirror-sharp sun highlight can overflow the half-float buffer (Inf), and some drivers produce NaN. Either one
+    // would be smeared by the bloom and depth-of-field blurs into a large black box, so they stop here.
+    c.r = isnan( c.r ) ? 0.0 : c.r; c.g = isnan( c.g ) ? 0.0 : c.g; c.b = isnan( c.b ) ? 0.0 : c.b;
+    c.rgb = clamp( c.rgb, 0.0, 256.0 );
+    c.a = 1.0;
     if ( uUseAO > 0.5 ) c.rgb *= texture2D( tAO, vUv ).r;
     vec2 p = ( vUv - 0.5 ) * vec2( uAspect, 1.0 );
     c.rgb *= mix( 1.0, smoothstep( 1.05, 0.25, length( p ) ), uVignette );

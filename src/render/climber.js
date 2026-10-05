@@ -63,7 +63,7 @@ export function createClimber(scene, { renderer = null } = {}) {
     mask: new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.75 }),
     valve: new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.5 }),
     balaclava: new THREE.MeshStandardMaterial({ color: 0x30343c, roughness: 0.9 }),
-    lens: new THREE.MeshPhysicalMaterial({ color: 0xd9962b, metalness: 1, roughness: 0.08, envMap, iridescence: 0.6, iridescenceIOR: 1.6, clearcoat: 1 }),
+    lens: new THREE.MeshPhysicalMaterial({ color: 0xd9962b, metalness: 1, roughness: 0.16, envMap, iridescence: 0.6, iridescenceIOR: 1.6 }),
     rope: new THREE.MeshStandardMaterial({ color: 0x1fa38a, roughness: 0.9 }),
     skin: new THREE.MeshStandardMaterial({ color: 0xc58c64, roughness: 0.7 }),
   };
