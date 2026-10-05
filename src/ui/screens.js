@@ -139,6 +139,10 @@ function renderTravel() {
     </div>
     <h3>Walk speed <span class="dim" style="font-weight:400">· debug</span></h3>
     <div class="btns">${speeds}</div>
+    <h3>Physics experiments</h3>
+    <p class="note">Try a fall with J or release an avalanche with B. Hold Space to self-arrest or escape shallow burial.
+      Injuries are disabled here. Shift+B resets the avalanche and returns you to its starting point.</p>
+    <div class="btns"><button data-act="test-fall">Test fall</button><button data-act="avalanche">Release avalanche</button><button data-act="reset-physics">Reset experiment</button></div>
     <h3>Climb for real</h3>
     <p class="note">Survival systems back on, right here: a fresh expedition from where you stand, acclimatized as after the
       rotations and on oxygen above 7,000 m. Your old save is kept until you rest or save at a camp.</p>
@@ -220,6 +224,9 @@ function onCampClick(e) {
   if (act === 'hour') { setHour(Number(b.dataset.h)); renderTravel(); return; }
   if (act === 'clear') { setClearWeather(b.dataset.on === '1'); renderTravel(); return; }
   if (act === 'speed') { setSpeedMul(Number(b.dataset.m)); renderTravel(); return; }
+  if(act==='test-fall') { resumePlay(); game.physics.testFall(); return; }
+  if(act==='avalanche') { resumePlay(); game.physics.triggerAvalanche(); return; }
+  if(act==='reset-physics') { game.physics.resetExperiment(); renderTravel(); return; }
   if (act === 'exit-free') { exitFreeViewing(); resetHUD(); resumePlay(); return; }
   if (act === 'new-exp') { $('btnNew').onclick(); return; }
   if (act === 'continue-exp') { $('btnContinue').onclick(); return; }

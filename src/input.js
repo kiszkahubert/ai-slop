@@ -24,6 +24,8 @@ export function initInput({ onDebugKey } = {}) {
       case 'KeyV': game.view.fp = !game.view.fp; document.getElementById('crosshair').classList.toggle('hidden', !game.view.fp); break;
       case 'KeyM': document.getElementById('hudTR').classList.toggle('big'); break;
       case 'KeyX': toggleSkis(); break;        // easter egg
+      case 'KeyB': if(e.shiftKey) game.physics?.resetExperiment(); else game.physics?.triggerAvalanche(); break;
+      case 'KeyJ': game.physics?.testFall(); break;
       case 'KeyT': if (game.free) { emit('openTravel'); break; } if (onDebugKey) onDebugKey(e.code); break;
       default:
         if (/^Digit[1-4]$/.test(e.code)) setFlow(Number(e.code.slice(5)));
@@ -46,9 +48,10 @@ export function manualControl() {
   if (keys.has('KeyW')) iz -= 1; if (keys.has('KeyS')) iz += 1;
   if (keys.has('KeyA')) ix -= 1; if (keys.has('KeyD')) ix += 1;
   const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  if (!ix && !iz) return { dx: 0, dz: 0, sprint };
+  const arrest = keys.has('Space');
+  if (!ix && !iz) return { dx: 0, dz: 0, sprint, arrest };
   const yaw = game.view.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   let dx = fx * -iz + rx * ix, dz = fz * -iz + rz * ix;
   const l = Math.hypot(dx, dz);
-  return { dx: dx / l, dz: dz / l, sprint };
+  return { dx: dx / l, dz: dz / l, sprint, arrest };
 }

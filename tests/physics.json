@@ -1,0 +1,10 @@
+[
+  {"eval":"document.getElementById('gl').requestPointerLock=()=>Promise.resolve()"},
+  {"click":"#btnFree"},{"click":"[data-act=hour][data-h='12']"},{"click":"[data-act=clear][data-on='1']"},{"click":"[data-act=tp][data-id=c3]"},
+  {"script":"tests/physics.js","expect":"r.fallStarted && r.parts === 11 && r.finite"},
+  {"wait":500},{"shot":"physical_fall.png"},
+  {"script":"tests/avalanche.js","expect":"r.started && r.caught && r.displacement > 1 && r.peak > 5 && r.massError < 0.001 && r.invulnerable && r.finite"},
+  {"script":"tests/avalanche_visual.js","expect":"r.volume > 100 && r.speed > 5"},
+  {"wait":700},{"shot":"avalanche_flow.png"},
+  {"script":"tests/physics_controls.js","expect":"r.manualFall && r.fallPaused && r.resetFall && r.snowPaused && r.resetSnow && r.menuFall"}
+]

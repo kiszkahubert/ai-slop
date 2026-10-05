@@ -13,7 +13,8 @@
     var base = local ? 'node_modules/three/' : 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
     var map = document.createElement('script');
     map.type = 'importmap';
-    map.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/' } });
+    var physics = local ? 'node_modules/@dimforge/rapier3d-compat/dist/rapier.mjs' : 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs';
+    map.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/', '@dimforge/rapier3d-compat': physics } });
     document.currentScript.after(map);
   })();
 </script>
@@ -22,6 +23,7 @@
 <canvas id="gl"></canvas>
 <div id="vignette"></div>
 <div id="frostOverlay"></div>
+<div id="burialOverlay" style="position:fixed;inset:0;background:radial-gradient(ellipse,#ccd9e1,#eff4f7);opacity:0;pointer-events:none;transition:opacity .4s"></div>
 
 <div id="hud" class="hidden">
   <canvas id="altGauge" width="52" height="330"></canvas>

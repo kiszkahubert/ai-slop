@@ -7,6 +7,7 @@ import { crevasseLocal } from '../world/props.js';
 import { game, die, region } from './game.js';
 import { seracCollide, stopAutopilot } from './player.js';
 import { maxStamina } from './physiology.js';
+import { groundHeight } from './surface.js';
 
 export const SKI = {
   g: 9.81,
@@ -70,7 +71,7 @@ export function updateSki(dt, ctl) {
   u = Math.abs(u) <= decel ? 0 : u - Math.sign(u) * decel;
   let vx = u * hx + w * nx0, vz = u * hz + w * nz0;
   let nx = P.x + vx * dt, nz = P.z + vz * dt;
-  const hv = Math.hypot(vx, vz), grade = hv > 1e-3 ? (field.height(nx, nz) - field.height(P.x, P.z)) / (hv * dt) : 0;
+  const hv = Math.hypot(vx, vz), grade = hv > 1e-3 ? (groundHeight(game,nx,nz) - groundHeight(game,P.x,P.z)) / (hv * dt) : 0;
   K.speed = hv * Math.sqrt(1 + grade * grade);
   // crevasses: fly over them with some speed, or drop in
   let overCv = null;
@@ -89,23 +90,20 @@ export function updateSki(dt, ctl) {
   const [sx, sz] = seracCollide(nx, nz);
   if (Math.hypot(sx - nx, sz - nz) > 1e-3) {
     if (K.speed > SKI.bonk) {
-      const dmg = (K.speed - SKI.bonk + 2) * 4;
-      if (!game.free) S.health -= dmg;
-      toast(game.free ? 'Bonk! You hit a serac.' : `You skied into a serac at ${fmt(K.speed * 3.6)} km/h (−${fmt(dmg)} health).`, 'bad', 3.5);
-      if (S.health <= 0) { P.ski = null; die(`Skied into a serac at ${fmt(K.speed * 3.6)} km/h in the ${region()}.`); return; }
+      if(game.physics) { game.physics.startFall({reason:'ski crash',region:region(),velocity:{x:vx,y:grade*hv,z:vz}}); return; }
     }
     u = 0; w = 0; vx = vz = 0;
   }
   nx = clamp(sx, field.x0 + 100, field.x1 - 100); nz = clamp(sz, field.z0 + 100, field.z1 - 100);
   // speed wobble: past ~120 km/h the skis chatter and you can lose them
   if (K.speed > SKI.wobble && !game.free && Math.random() < ((K.speed - SKI.wobble) / 10) ** 2 * (K.tuck ? 1 : 0.6) * dt) {
-    const kmh = K.speed * 3.6;
     P.x = nx; P.z = nz; P.y = field.height(nx, nz); P.ski = null;
-    die(`Lost an edge at ${fmt(kmh)} km/h on the ${region()} and tumbled down the mountain. Speed is a choice.`);
+    game.physics?.startFall({reason:'lost ski edge',region:region(),velocity:{x:vx,y:grade*hv,z:vz}});
     return;
   }
   S.distance += Math.hypot(nx - P.x, nz - P.z);
-  P.x = nx; P.z = nz; P.y = field.height(nx, nz);
+  P.velocity={x:vx,y:grade*hv,z:vz};
+  P.x = nx; P.z = nz; P.y = groundHeight(game,nx,nz);
   K.u = u; K.w = w;
   // the skis follow the slope along their length
   K.pitch = Math.atan((field.height(P.x + hx, P.z + hz) - field.height(P.x - hx, P.z - hz)) / 2);

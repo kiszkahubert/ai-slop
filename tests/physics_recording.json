@@ -1,0 +1,15 @@
+[
+  {"eval":"document.getElementById('gl').requestPointerLock=()=>Promise.resolve()"},
+  {"click":"#btnFree"},
+  {"click":"[data-act=hour][data-h='12']"},
+  {"click":"[data-act=clear][data-on='1']"},
+  {"click":"[data-act=tp][data-id=c3]"},
+  {"eval":"(()=>{const W=__sim,g=W.game,p=g.routes.main.point('c3');W.teleport(p.x+12,p.z);const s=g.field.slope(g.P.x,g.P.z,4),m=s.mag||1;g.view.fp=true;g.P.facing=g.view.yaw=Math.atan2(s.gx,s.gz);return W.forceFall({heightOffset:1,velocity:{x:-s.gx/m*3,y:-m*3,z:-s.gz/m*3}});})()"},
+  {"wait":1200},
+  {"key":"Space","hold":5000},
+  {"shot":"fall_recording_frame.png"},
+  {"eval":"(()=>{const W=__sim,g=W.game;W.resetPhysics();g.view.fp=false;g.mode='play';g.time=8;W.triggerAvalanche({seed:87});const A=g.physics.avalanche,x=A.source.x+A.dx*30,z=A.source.z+A.dz*30,y=g.field.height(x,z),cx=x+A.dx*100-A.dz*50,cz=z+A.dz*100+A.dx*50;W.rig.free={pos:[cx,g.field.height(cx,cz)+25,cz],look:[x,y+6,z]};return {volume:A.initialVolume};})()"},
+  {"wait":9000},
+  {"shot":"avalanche_recording_frame.png"},
+  {"eval":"(()=>{const g=__sim.game,v=__sim.avalancheView,out={mode:g.mode,t:g.physics.avalanche.t,speed:g.physics.avalanche.maxSpeed,finite:Object.values(g.physics.pose()).every(p=>[...p.p,...p.q].every(Number.isFinite)),volume:g.physics.avalanche.volume(),wet:v.wet.length,clouds:v.clouds.filter(c=>c.active).length,first:v.clouds[0]};g.mode='paused';return out;})()"}
+]

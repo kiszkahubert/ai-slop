@@ -1,0 +1,11 @@
+const W=window.__sim,g=W.game;
+g.mode='play';W.rig.free=null;
+const c3=g.routes.main.point('c3');W.teleport(c3.x,c3.z);
+W.triggerAvalanche({seed:87});
+const A=g.physics.avalanche;
+for(let i=0;i<30*6;i++)W.simStep(1/30,{dx:0,dz:0});
+const x=A.source.x+A.dx*30,z=A.source.z+A.dz*30,y=g.field.height(x,z);
+const cx=x+A.dx*100-A.dz*50,cz=z+A.dz*100+A.dx*50;
+W.rig.free={pos:[cx,g.field.height(cx,cz)+25,cz],look:[x,y+6,z]};
+g.mode='paused';
+return {volume:A.volume(),speed:A.maxSpeed,t:A.t};

@@ -36,6 +36,7 @@ function freshStats(seed) {
 
 export function newGame(seed, { free = false } = {}) {
   const g = game;
+  g.physics?.reset();
   resetDebrief();
   g.free = free;
   g.S = freshStats(seed);
@@ -74,7 +75,7 @@ export function checkProgress() {
   const { S, P, routes } = game;
   if (P.y > S.maxAlt) S.maxAlt = P.y;
   checkMemorials();
-  if (game.free) return;            // free viewing: no landmarks, summits or win
+  if (game.free || P.falling) return; // Summit and safe-return credit require a standing climber.
   if (P.y > 7000 && o2Flowing(S)) S.usedO2Above7000 = true;
   for (const route of Object.values(routes)) for (const [tag, i] of Object.entries(route.tags)) {
     if (S.landmarks[tag] || !LANDMARKS[tag]) continue;
@@ -203,6 +204,7 @@ function serialize() {
 }
 export function save(silent) {
   if (game.free) return;            // free viewing never overwrites the expedition save
+  if(game.P.falling || (game.physics?.avalanche && !game.physics.avalanche.settled)) { if(!silent) toast('Cannot save during a fall or moving avalanche.', 'warn', 3); return; }
   lastSave = serialize();
   try { localStorage.setItem(SAVE_KEY, lastSave); } catch { /* private mode: keep the in-memory copy */ }
   if (!silent) toast('Progress saved.', 'good');
@@ -240,6 +242,7 @@ export function hasSave() {
 export function load() {
   const d = readSave();
   if (!d) return false;
+  game.physics?.reset();
   game.S = d.S; game.S.stock.ebc = Infinity;       // JSON stores Infinity as null
   // Older v2 saves predate Nuptse; keep their inventory and completed summits.
   game.S.summits.nuptse ??= false;
@@ -320,6 +323,7 @@ export function setSpeedMul(m) {
 
 /** Move the climber somewhere new, clearing everything tied to the old position (rope, autopilot, fall). */
 export function placePlayer(x, z, yaw) {
+  game.physics?.reset();
   const { P, view } = game;
   Object.assign(P, { x, z, falling: null, clipped: -1, ropeHint: -1, onLadder: false, routeHint: -1, moving: false });
   if (P.ski) Object.assign(P.ski, { u: 0, w: 0, speed: 0 });
