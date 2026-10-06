@@ -34,6 +34,7 @@ export function createTerrainMaterial(opts) {
     uSastrugiCS: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.86, metalness: 0 });
+  mat.userData.rtTerrain = true;
   mat.defines = { TERRAIN_ANTI_TILING: opts.antiTiling ? 1 : 0, TERRAIN_MICRO: opts.microDetail ? 1 : 0, TERRAIN_GRAD: opts.exactGradients ? 1 : 0 };
   mat.userData.uniforms = uniforms;
   mat.userData.macroPatched = true;           // has its own mountain-shadow code (see patchMacroShadow)
@@ -177,6 +178,17 @@ void layer( float L, vec3 p, vec3 n, vec3 bw, float mixN, float camD, float ns, 
   #endif
 }
 `;
+
+// The tracer samples the same authored layer blend with a ray footprint instead of screen derivatives.
+export function terrainSampleShader() {
+  const pars = FRAG_PARS.replace(/varying[^;]+;/g, '');
+  const body = FRAG_COLOR.replace('vec3 n0 = normalize( vWNrm );', '')
+    .replace('float camD = length( vWPos - cameraPosition );', '')
+    .replace('vec3 dpx = dFdx( q ), dpy = dFdy( q );', '')
+    .replaceAll('vWPos', 'p').replaceAll('vGl', 'glacier').replaceAll('vRock', 'rock')
+    .replace('diffuseColor.rgb = alb * tint;', 'result = alb * tint;');
+  return pars + '\nvoid secondaryTerrain(vec3 p, vec3 n0, float glacier, float rock, float camD, vec3 dpx, vec3 dpy, out vec3 result)' + body;
+}
 
 const FRAG_COLOR = `
 {

@@ -1,4 +1,5 @@
 tests/out/
 __pycache__/
 node_modules/
+.npm-cache/
 *.tif

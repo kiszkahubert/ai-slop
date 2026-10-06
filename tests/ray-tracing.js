@@ -1,0 +1,25 @@
+return (async()=>{
+const s=__sim,rt=s.rayTracing;
+const assert=(v,m)=>{if(!v)throw new Error(m);};
+const wait=async condition=>{const end=performance.now()+120000;while(!condition()){assert(!rt.failed,rt.failed);assert(performance.now()<end,'Lighting initialization timed out');await new Promise(r=>setTimeout(r,100));}};
+assert(!rt.requested,'Ray tracing should default to off');
+const state=JSON.stringify({seed:s.game.S.seed,physics:s.game.physics.state,camps:s.game.world.campVisuals.records.map(r=>[r.x,r.y,r.z])});
+s.setQuality('medium');document.querySelector('[data-rt-toggle]').click();
+await wait(()=>rt.snapshot&&rt.historyValid&&rt.frame>8);
+assert(rt.stats.active&&rt.stats.memoryBytes<268435456,'Lighting must be active within memory budget');
+assert(rt.catalog.originals.size>3,'Forward materials were not patched');
+let dynamic=0;s.climber.group.traverse(o=>{const p=rt.proxies.get(o);if(p){dynamic++;assert(p.capture.material.userData.rtCaptureEligible===false,'Dynamic receiver incorrectly classified');}});
+assert(dynamic>0&&rt.dynamicScene.children.length>0,'Climber must remain in the dynamic depth/shadow pass');
+const frames=rt.frame;s.setQuality('low');await new Promise(r=>setTimeout(r,300));
+assert(rt.requested&&!rt.stats.active&&rt.frame===frames,'Low must suspend lighting while remembering the request');
+s.setQuality('high');await wait(()=>rt.frame>frames+2&&rt.historyValid);
+const snapshots=rt.stats.snapshots;s.setQuality('medium');await wait(()=>rt.historyValid);assert(rt.stats.snapshots===snapshots,'Quality/display LOD must not rebuild static geometry');
+rt.catalog.scene.traverse(o=>{if(o.isInstancedMesh&&o.parent===s.game.world.campVisuals.root&&o.visible&&o.boundingSphere?.distanceToPoint(s.camera.position)<100)assert(rt.proxies.has(o),'Visible nearby camp instance missing from surface capture');});
+const position=s.camera.position.clone();s.teleport(s.game.P.x+350,s.game.P.z);await wait(()=>rt.stats.snapshots>snapshots&&rt.historyValid);
+s.camera.position.copy(position);s.setRayTracing(false);assert(!rt.stats.active&&!rt.failed,'Switch off should restore normal lighting');
+assert(localStorage.getItem('everestSim.rayTracing')==='off','Preference must persist');
+assert(JSON.stringify({seed:s.game.S.seed,physics:s.game.physics.state,camps:s.game.world.campVisuals.records.map(r=>[r.x,r.y,r.z])})===state,'Rendering changed simulation data');
+const result={pass:true,...rt.stats,scale:rt.scale};
+rt.fail('Test fallback');assert(!rt.ready&&!rt.snapshot&&rt.catalog.originals.size===0&&rt.screenTargets.length===0,'Failure must release lighting and restore forward materials');
+return result;
+})();

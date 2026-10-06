@@ -9,6 +9,7 @@
 //   SHOT_TIMEOUT screenshot timeout in ms (default: 120000)
 //   VIDEO        set to 1 to save a browser recording under SHOTS
 //   NO_SHOTS     set to 1 to skip screenshots while retaining all assertions
+//   HARDWARE     set to 1 to use the real GPU (renderer is reported by the benchmark)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,11 +37,12 @@ const SHOT_TIMEOUT = Number(process.env.SHOT_TIMEOUT || 120000);
 fs.mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || undefined,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  args: process.env.HARDWARE ? ['--use-gl=angle', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const viewport={width:Number(process.env.W || 1280),height:Number(process.env.H || 720)};
 const page = await browser.newPage({ viewport, ...(process.env.VIDEO ? {recordVideo:{dir:shots,size:viewport}} : {}) });
 const errors = [];
+process.on('uncaughtException', async error => { console.error(error); await browser.close(); server.close(); process.exit(1); });
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); console.log(`[${m.type()}]`, m.text()); });
 page.on('pageerror', (e) => { errors.push(e.message); console.log('[pageerror]', e.message); });
 // serve three.js locally when available, so the tests run offline and don't depend on the CDN
@@ -64,6 +66,7 @@ for (const a of actions) {
     const src = fs.readFileSync(path.resolve(root, a.script), 'utf8');
     const r = await page.evaluate(`(async () => { ${src}\n })()`);
     console.log('[script]', JSON.stringify(r, null, 1));
+    if (a.save) fs.writeFileSync(path.join(shots,path.basename(a.save)),JSON.stringify(r,null,2)+'\n');
     if (a.expect && !new Function('r', `return (${a.expect});`)(r)) { errors.push('expectation failed: ' + a.expect); }
   }
   if (a.key) { await page.keyboard.down(a.key); await page.waitForTimeout(a.hold || 50); await page.keyboard.up(a.key); }

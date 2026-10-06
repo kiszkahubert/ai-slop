@@ -48,6 +48,16 @@ Nuptse progress and high-camp stock while preserving the existing expedition.
 
 ## Free viewing
 
+**Ray-traced lighting** is an optional switch on the title and pause screens. It adds soft sun shadows,
+terrain skylight and one diffuse bounce while keeping the normal Three.js renderer. It is off by default;
+the choice is remembered separately from graphics quality. Medium and High support it; Low pauses it.
+Lighting converges over time, including on distant mountains. The first nearby geometry snapshot takes
+several seconds at Base Camp. `?rt=on` and `?rt=off` override the saved preference.
+
+WebGL2 with floating point render targets is required. Unsupported GPUs or initialization failures fall
+back to normal lighting and display an explanation beside the switch. See [the rendering notes](docs/ray-tracing.md)
+for the architecture, rebuild command and hardware benchmark procedure.
+
 To look around, choose **Free viewing** on the title screen, or open the **Base Camp** menu (E) during an expedition.
 You can teleport to any camp (Base Camp, Camps 1–4, Lhotse Camp 4), the Icefall, the Yellow Band, the Balcony, the
 South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or any of the three summits.

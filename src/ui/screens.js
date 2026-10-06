@@ -15,6 +15,13 @@ import { CLIMBS, reachedSummits } from '../world/route.js';
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrDebrief', 'scrLoading'];
 let canvas, currentCamp = null, pausedAt = 0, expectUnlock = false, debriefReturn = 'scrDead';
+let rayTracingStatus = { requested: false, status: 'Off' };
+on('rayTracingStatus', status => { rayTracingStatus = status; renderRayTracing(); });
+function renderRayTracing() {
+  for (const box of document.querySelectorAll('[data-ray-tracing]')) {
+    box.innerHTML = `<label><input type="checkbox" data-rt-toggle ${rayTracingStatus.requested ? 'checked' : ''}> Ray-traced lighting</label><small class="dim" style="display:block">${rayTracingStatus.status}</small>`;
+  }
+}
 
 function show(id) {
   for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
@@ -31,6 +38,8 @@ function renderQualityButtons() {
 export function initScreens(glCanvas) {
   canvas = glCanvas;
   renderQualityButtons();
+  renderRayTracing();
+  document.addEventListener('change', e => { if (e.target.matches('[data-rt-toggle]')) emit('setRayTracing', e.target.checked); });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-quality]');
     if (!b) return;

@@ -10,10 +10,10 @@
   // ?localthree (offline development: `npm install`, then `npm start`).
   (function () {
     var local = new URLSearchParams(location.search).has('localthree');
-    var base = local ? 'node_modules/three/' : 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
+    var base = local ? './node_modules/three/' : 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
     var map = document.createElement('script');
     map.type = 'importmap';
-    var physics = local ? 'node_modules/@dimforge/rapier3d-compat/dist/rapier.mjs' : 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs';
+    var physics = local ? './node_modules/@dimforge/rapier3d-compat/dist/rapier.mjs' : 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs';
     map.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/', '@dimforge/rapier3d-compat': physics } });
     document.currentScript.after(map);
   })();
@@ -107,6 +107,7 @@
       <button id="btnFree">Free viewing — teleport to any camp or summit</button>
     </div>
     <div class="quality"><span>Graphics</span><span class="qbtns" data-quality-buttons></span></div>
+    <div class="quality" data-ray-tracing></div>
     <p id="titleMsg" class="cause" style="font-size:14px" role="status"></p>
     <p class="note" style="margin-top:14px">Elevation data: <a href="https://doi.org/10.5281/zenodo.6979691" target="_blank" rel="noopener">Pléiades DEM, Khumbu, 23 March 2017</a>,
       Etienne Berthier (CC BY 4.0). Copernicus GLO-30 fills data gaps and the distant horizon, © DLR e.V. 2010–2014 and
@@ -129,6 +130,7 @@
       <button id="btnQuit">Abandon expedition</button>
     </div>
     <div class="quality" style="margin-top:14px"><span>Graphics</span><span class="qbtns" data-quality-buttons></span></div>
+    <div class="quality" data-ray-tracing></div>
   </div>
 </div>
 

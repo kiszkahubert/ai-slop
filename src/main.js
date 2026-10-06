@@ -15,6 +15,7 @@ import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/pr
 import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
 import { installAtmosphericFog } from './render/atmosphere.js';
 import { setupPostProcessing } from './render/postfx.js';
+import { RayTracingLighting } from './render/rayTracing/lighting.js';
 import { SHARED, patchSceneMaterials } from './render/shared.js';
 import { on } from './core/events.js';
 import { smoothstep } from './core/math.js';
@@ -59,7 +60,7 @@ const resize = () => {
 };
 addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey;
+let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -97,8 +98,21 @@ async function boot() {
   avalancheView = new AvalancheView(scene);
   env = new Environment(scene, renderer, { quality, field, macroShadow });
   climber = createClimber(scene, { renderer });
+  climber.group.userData.rtDynamic = true;
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
   postfx = setupPostProcessing(renderer, scene, camera, quality);
+  rayTracing = new RayTracingLighting(renderer, scene, camera, { field, back, world: game.world, terrainMaterial: terrainMat, sun: env.sun, quality: qualityName });
+  // A shader/driver failure must leave ordinary rendering available.
+  const shaderError = renderer.debug.onShaderError;
+  renderer.debug.onShaderError = (...args) => {
+    if (rayTracing.requested && rayTracing.ready) {
+      const [gl, program, vertex, fragment] = args;
+      console.warn('Ray-traced lighting shader:', gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment));
+      rayTracing.pendingFailure = 'GPU rejected a lighting shader'; return;
+    }
+    if (shaderError) shaderError(...args);
+    else { const [gl, program, vertex, fragment] = args; console.error('Shader compilation failed:', gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment)); }
+  };
   rig = new CameraRig(camera);
   newGame(1);
   initToasts(); initHUD(canvas); initScreens(canvas); initAudio();
@@ -126,6 +140,7 @@ function frame(now) {
   climber.update(dt, game.P, game.S, game.physics);
   rig.update(dt, simTime, game, climber);
   avalancheView.update(game.mode==='play'||game.mode==='dead'?dt:0, game.physics, camera);
+  if (avalancheView.group) avalancheView.group.userData.rtDynamic = true;
   game.world.campVisuals.update(camera);
   game.world.crevasseVisuals.update(camera);
   game.env.sunEl = env.update(dt, {
@@ -140,6 +155,7 @@ function frame(now) {
   updateAudio(dt);
   const tr = performance.now();
   const firstPerson = game.view.fp && !game.P.falling && !game.P.recovery;
+  rayTracing.prepare(game.time);
   postfx.render({ free: game.free, focus: firstPerson ? 30 : rig.dist });
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
@@ -180,13 +196,16 @@ function setQuality(name) {
     opts.relief = relief.texture; opts.reliefRect = relief.rect;
   }
   updateTerrainMaterial(terrainMat, opts);
+  rayTracing?.configure(name);
   return true;
 }
 on('setQuality', setQuality);
+on('setRayTracing', value => rayTracing?.setEnabled(value));
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
   get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  get rayTracing() { return rayTracing; }, setRayTracing: value => rayTracing?.setEnabled(value),
   triggerAvalanche: (options) => game.physics.triggerAvalanche(options),
   forceFall: (options) => game.physics.startFall({ reason: 'test', ...options }),
   resetPhysics: () => { const ok = game.physics.resetExperiment(); refreshConditions(); return ok; },

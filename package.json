@@ -8,6 +8,9 @@
     "node": ">=20.19"
   },
   "scripts": {
+    "build:render": "node tools/build-render.mjs",
+    "test:rt": "node tests/harness.mjs tests/ray-tracing.json",
+    "benchmark:rt": "node tests/harness.mjs tests/ray-tracing-benchmark.json",
     "start": "node tools/start.mjs",
     "start:offline": "node tools/start.mjs --offline",
     "lint": "eslint .",
@@ -21,12 +24,14 @@
     "verify:terrain": "node tools/run-python.mjs tools/verify_pleiades_assets.py"
   },
   "devDependencies": {
+    "esbuild": "0.25.10",
     "eslint": "10.1.0",
     "http-server": "14.1.1",
     "playwright": "1.56.1",
     "three": "0.160.0"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "0.21.0"
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "three-mesh-bvh": "0.7.6"
   }
 }

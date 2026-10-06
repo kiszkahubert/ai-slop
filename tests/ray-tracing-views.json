@@ -1,0 +1,7 @@
+[
+ {"eval":"__sim.game.mode='paused'; document.querySelectorAll('.screen').forEach(o=>o.classList.add('hidden')); __sim.setQuality('medium'); __sim.game.time=12; __sim.game.weather.clear=true; __sim.setRayTracing(false)"},
+ {"wait":1000},{"shot":"rt-basecamp-off.png"},
+ {"script":"tests/ray-tracing-views.js","expect":"r.ready && r.cacheAtCamera[3] > .5"}, {"shot":"rt-basecamp-on.png"},
+ {"eval":"__sim.setRayTracing(false); __sim.teleport(__sim.game.routes.main.pts.at(-1).x,__sim.game.routes.main.pts.at(-1).z)"}, {"wait":1000}, {"shot":"rt-summit-off.png"},
+ {"script":"tests/ray-tracing-views.js","expect":"r.ready && r.cacheAtCamera[3] > .5"}, {"shot":"rt-summit-on.png"}
+]
