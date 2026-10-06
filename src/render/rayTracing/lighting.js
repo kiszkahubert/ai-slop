@@ -44,7 +44,6 @@ export class RayTracingLighting {
     this.timer=new GpuTimer(renderer.getContext());
     this.copy=quad(COPY,{tA:uniform(BLACK),tB:uniform(BLACK)});
     this.depthMaterial=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});
-    this.dynamicScene.overrideMaterial=this.depthMaterial;
     this.dynamicTarget=new THREE.WebGLRenderTarget(1024,1024,{depthBuffer:true,minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
     this.unsubscribe=on('teleported',()=>{this.historyValid=false;});
     this.notify();
@@ -183,7 +182,7 @@ export class RayTracingLighting {
       seen.add(o);let p=this.proxies.get(o);const dynamic=isDynamic(o);
       if(!p){
         const make=mat=>o.isInstancedMesh?new THREE.InstancedMesh(o.geometry,mat,o.instanceMatrix.count):new THREE.Mesh(o.geometry,mat);
-        p={capture:make(captureMaterial(o.material,!dynamic,this.origin)),shadow:dynamic&&o.castShadow?make(this.depthMaterial):null};
+        p={capture:make(captureMaterial(o.material,!dynamic,this.origin)),shadow:dynamic&&o.castShadow?make(o.customDepthMaterial||this.depthMaterial):null};
         this.captureScene.add(p.capture);if(p.shadow)this.dynamicScene.add(p.shadow);this.proxies.set(o,p);
       }
       for(const proxy of [p.capture,p.shadow])if(proxy){

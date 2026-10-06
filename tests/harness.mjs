@@ -41,6 +41,8 @@ const browser = await chromium.launch({
 });
 const viewport={width:Number(process.env.W || 1280),height:Number(process.env.H || 720)};
 const page = await browser.newPage({ viewport, ...(process.env.VIDEO ? {recordVideo:{dir:shots,size:viewport}} : {}) });
+// First-use shader compilation can also stall UI interactions on SwiftShader.
+page.setDefaultTimeout(SHOT_TIMEOUT);
 const errors = [];
 process.on('uncaughtException', async error => { console.error(error); await browser.close(); server.close(); process.exit(1); });
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); console.log(`[${m.type()}]`, m.text()); });

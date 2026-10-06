@@ -4,6 +4,7 @@
 //  - the quilted down-jacket normal map, and a placeholder for the helmet logo decal.
 // All noise is tileable so the textures repeat seamlessly.
 import * as THREE from 'three';
+import { applyPhotographedRock } from './terrainAssets.js';
 import { mulberry32 } from '../core/noise.js';
 
 // ---------------- tileable noise
@@ -120,18 +121,20 @@ function rockLayer(S, rand) {
 
 function snowLayer(S, rand) {
   // wind-carved sastrugi: ridges stretched along x, over fine grain
-  const rip = stretched(S, 3, 22, rand), rip2 = stretched(S, 6, 40, rand), grain = fbm(S, 32, rand, 3), lumps = fbm(S, 4, rand, 4);
+  const rip = stretched(S, 4, 9, rand), rip2 = stretched(S, 7, 17, rand), grain = fbm(S, 32, rand, 3), lumps = fbm(S, 4, rand, 4);
+  const patches = fbm(S, 3, rand, 3);
   const h = new Float32Array(S * S);
   for (let i = 0; i < S * S; i++) {
-    const r = Math.pow(1 - Math.abs(rip[i] * 2 - 1), 3) * 0.6 + Math.pow(1 - Math.abs(rip2[i] * 2 - 1), 4) * 0.25;
-    h[i] = r * (0.5 + 0.5 * lumps[i]) + 0.15 * grain[i];
+    const r = Math.pow(1 - Math.abs(rip[i] * 2 - 1), 3) * 0.4 + Math.pow(1 - Math.abs(rip2[i] * 2 - 1), 4) * 0.12;
+    const carve = smooth(0.48, 0.72, patches[i]);
+    h[i] = r * carve + 0.12 * lumps[i] + 0.035 * grain[i];
   }
   const cav = blur(S, h, 3);
   return {
     h, cav,
     col: (i) => { const c = 0.965 + 0.035 * grain[i] - 0.03 * (cav[i] - h[i] > 0 ? 1 : 0); return [236 * c, 241 * c, 250 * c]; },
     rough: (i) => 0.78 - 0.18 * smooth(0.5, 0.9, h[i]),            // crests are wind-polished
-    normalStrength: 1.3,
+    normalStrength: 0.85,
   };
 }
 
@@ -174,7 +177,7 @@ function moraineLayer(S, rand) {
 }
 
 /** Builds the two terrain texture arrays at the given size (power of two). */
-export function createTerrainLayerTextures(S, anisotropy = 1) {
+export function createTerrainLayerTextures(S, anisotropy = 1, rock = null) {
   const rand = mulberry32(2024);
   const layers = [rockLayer(S, rand), snowLayer(S, rand), iceLayer(S, rand), moraineLayer(S, rand)];
   const albedo = new Uint8Array(S * S * 4 * layers.length), surface = new Uint8Array(S * S * 4 * layers.length);
@@ -190,6 +193,7 @@ export function createTerrainLayerTextures(S, anisotropy = 1) {
     }
     sobelInto(S, L.h, L.normalStrength * (S / 512), surface, off);
   });
+  applyPhotographedRock(S, albedo, surface, rock);
   const make = (data, srgb) => {
     const t = new THREE.DataArrayTexture(data, S, S, layers.length);
     t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;

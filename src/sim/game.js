@@ -7,6 +7,7 @@ import { stepPhysiology, conditionsAt, maxStamina, o2Flowing, swapTank, isEmptyB
 import { resetDebrief, recordSample } from './debrief.js';
 import { LANDMARKS, regionName, CLIMBS, reachedSummits } from '../world/route.js';
 import { CHECKPOINT_RADIUS } from '../world/memorials.js';
+import { groundHeight } from './surface.js';
 
 const SAVE_KEY = 'everestSim.v2.save';
 
@@ -44,7 +45,7 @@ export function newGame(seed, { free = false } = {}) {
   g.weather = new Weather(seed);
   const m = g.routes.main, a = m.at(m.s('ebc') + 20), b = m.at(m.s('ebc') + 60);
   Object.assign(g.P, { x: a.x - a.dz * 4, z: a.z + a.dx * 4, falling: null, clipped: -1, onLadder: false, routeHint: -1, ski: null, lastSupported:null });
-  g.P.y = g.field.height(g.P.x, g.P.z);
+  g.P.y = groundHeight(g,g.P.x,g.P.z);
   g.view.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z)); g.P.facing = g.view.yaw; g.view.pitch = -0.1;
   g.S.maxAlt = g.P.y;
   g.auto = null;
@@ -249,8 +250,9 @@ export function load() {
   game.S.usedO2Above7000 ??= !!game.S.usedO2InDZ;
   for (const c of game.camps) game.S.stock[c.id] ??= c.stock;
   Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1, ski: null });
-  game.P.y = game.field.height(game.P.x, game.P.z);
+  game.P.y = groundHeight(game,game.P.x,game.P.z);
   const safe=game.world?.crevasseField?.safePosition(game.P.x,game.P.z);if(safe)Object.assign(game.P,safe);
+  if(!game.world?.crevasseField?.at(game.P.x,game.P.z))game.P.y=groundHeight(game,game.P.x,game.P.z);
   game.P.lastSupported=null;
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
   game.weather = new Weather(game.S.seed);
@@ -330,8 +332,9 @@ export function placePlayer(x, z, yaw) {
   const { P, view } = game;
   Object.assign(P, { x, z, falling: null, clipped: -1, ropeHint: -1, onLadder: false, routeHint: -1, moving: false });
   if (P.ski) Object.assign(P.ski, { u: 0, w: 0, speed: 0, air:null });
-  P.y = game.field.height(x, z);
+  P.y = groundHeight(game,x,z);
   const safe=game.world?.crevasseField?.safePosition(x,z);if(safe)Object.assign(P,safe);
+  if(!game.world?.crevasseField?.at(P.x,P.z))P.y=groundHeight(game,P.x,P.z);
   P.lastSupported=null;
   if (yaw !== undefined) { view.yaw = yaw; P.facing = yaw; }
   game.auto = null;

@@ -5,17 +5,17 @@ export const QUALITY_PRESETS = {
   low: {
     label: 'Low', pixelRatio: 1, msaa: 0, post: false, bloom: false, ssao: false, dof: false,
     shadowMapSize: 1024, shadowExtent: 40, textureSize: 256, reliefCell: 32, aoCell: 64, macroShadow: false,
-    microDetail: false, exactGradients: false, snowParticles: 1500, mist: false,
+    microDetail: false, exactGradients: false, snowParticles: 1500, mist: false, terrainError: 5,
   },
   medium: {
     label: 'Medium', pixelRatio: 1.25, msaa: 4, post: true, bloom: true, ssao: false, dof: false,
     shadowMapSize: 2048, shadowExtent: 55, textureSize: 512, reliefCell: 16, aoCell: 32, macroShadow: true,
-    microDetail: true, exactGradients: false, snowParticles: 3500, mist: true,
+    microDetail: true, exactGradients: false, snowParticles: 3500, mist: true, terrainError: 3,
   },
   high: {
     label: 'High', pixelRatio: 1.5, msaa: 4, post: true, bloom: true, ssao: true, dof: true,
     shadowMapSize: 4096, shadowExtent: 70, textureSize: 1024, reliefCell: 8, aoCell: 16, macroShadow: true,
-    microDetail: true, exactGradients: true, snowParticles: 6000, mist: true,
+    microDetail: true, exactGradients: true, snowParticles: 6000, mist: true, terrainError: 2,
   },
 };
 

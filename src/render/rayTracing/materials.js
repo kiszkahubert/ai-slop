@@ -44,7 +44,7 @@ float rtDynamicShadow(vec3 p){
   if(any(lessThan(c.xyz,vec3(0)))||any(greaterThan(c.xyz,vec3(1))))return 1.0;
   float shadow=0.0;
   for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
-    float d=dot(texture2D(uRtDynamicShadow,c.xy+vec2(x,y)/uRtDynamicSize),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0)*.99609375);shadow+=step(c.z-.0005,d);
+    float d=dot(texture2D(uRtDynamicShadow,c.xy+vec2(x,y)/uRtDynamicSize),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0)*.99609375);shadow+=step(c.z-.00002,d);
   }return shadow/9.0;
 }
 `;
@@ -67,7 +67,11 @@ export function patchRayTracingMaterial(mat) {
         .replace('tSnow * uSnowFx.y * vec3', 'tSnow * uSnowFx.y * (1.0-rtAmount) * vec3');
     }
     // Expand only this material's light chunk, retaining Three's other light and BRDF handling.
-    let lights=THREE.ShaderChunk.lights_fragment_begin;
+    const expanded=sh.fragmentShader.match(/\/\/ SUN_LIGHT_BEGIN\n([\s\S]*?)\n\/\/ SUN_LIGHT_END/);
+    let lights=expanded?expanded[1]:THREE.ShaderChunk.lights_fragment_begin;
+    // Covered pixels use traced sun visibility rather than multiplying it by
+    // the fallback macro shadow a second time.
+    lights=lights.replace(`macroSunShadow( ${world} )`,`mix(macroSunShadow( ${world} ),1.0,rtBlend(${world}))`);
     lights=lights.replace('getDirectionalLightInfo( directionalLight, directLight );',`
       getDirectionalLightInfo(directionalLight,directLight);
       #if UNROLLED_LOOP_INDEX == 0
@@ -82,7 +86,7 @@ export function patchRayTracingMaterial(mat) {
       #else
       directLight.color*=stockShadow;
       #endif`);
-    sh.fragmentShader=sh.fragmentShader.replace('#include <lights_fragment_begin>',lights);
+    sh.fragmentShader=expanded?sh.fragmentShader.replace(expanded[0],lights):sh.fragmentShader.replace('#include <lights_fragment_begin>',lights);
   };
   mat.customProgramCacheKey=()=>key()+'|rt-forward-v1';mat.needsUpdate=true;
 }

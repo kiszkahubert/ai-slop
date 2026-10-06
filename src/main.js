@@ -12,6 +12,7 @@ import { Environment } from './world/environment.js';
 import { createClimber } from './render/climber.js';
 import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality } from './render/quality.js';
 import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/proceduralTextures.js';
+import { loadTerrainRock } from './render/terrainAssets.js';
 import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
 import { installAtmosphericFog } from './render/atmosphere.js';
 import { setupPostProcessing } from './render/postfx.js';
@@ -60,7 +61,7 @@ const resize = () => {
 };
 addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing;
+let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing, rock;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -77,7 +78,8 @@ async function boot() {
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
   await step('Painting rock, snow and ice…');
-  const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy());
+  rock = await loadTerrainRock();
+  const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy(), rock);
   layerSize = quality.textureSize;
   await step('Shading the relief…');
   relief = createReliefTexture(field, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
@@ -149,8 +151,9 @@ function frame(now) {
     labels: [...game.camps.map((c) => c.label), ...game.world.labels],
   });
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
-  terrain.update(camera.position, 3);
-  backdrop.update(camera.position, 2);
+  const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
+  terrain.update(camera.position, 3, lodView);
+  backdrop.update(camera.position, 2, lodView);
   if (game.mode === 'play' || game.mode === 'camp' || game.mode === 'paused') updateHUD(dt);
   updateAudio(dt);
   const tr = performance.now();
@@ -190,7 +193,7 @@ function setQuality(name) {
   game.world.crevasseVisuals.applyQuality(q);
   game.world.campVisuals.update(camera, true);
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
-  if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
+  if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy(), rock); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
     relief = createReliefTexture(game.field, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
     opts.relief = relief.texture; opts.reliefRect = relief.rect;

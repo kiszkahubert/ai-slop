@@ -224,23 +224,28 @@ oxygen, route map, compass, camera and controls behave exactly the same at every
 | Mist layers, snow particles | off, 1,500 | on, 3,500 | on, 6,000 |
 
 What the renderer does:
-- **Terrain**: four procedural layers (dark layered rock, snow with wind-carved sastrugi, ice/firn, moraine gravel),
-  each with albedo, normal, roughness and AO, generated at load (no texture files). They are sampled with triplanar
+- **Terrain**: photographed CC0 cliff rock plus procedural snow, ice/firn and moraine gravel,
+  each with albedo, normal, roughness and AO. They are sampled with signed triplanar
   mapping, so steep faces don't stretch, and blended by altitude, slope and the glacier/rock masks. Every layer is
   sampled at two scales mixed by low-frequency noise (no visible tiling), with micro normals up close. A Sobel normal
   map and horizon AO baked from the elevation model keep distant relief crisp. Snow glints in the sun and glows
-  faintly blue in shadow.
+  faintly blue in shadow. Projected-error LOD preserves native ridges; local snow shelves share their
+  display triangles with support and fall collisions. Instanced footprints mark compressed route snow.
 - **Light**: the mountains cast real shadows on each other (ray-marched toward the sun a few rows per frame), the
   sun's shadow map is snapped to its texel grid so near shadows stay sharp and never shimmer, and exposure adapts
   when you stand in shadow.
 - **Atmosphere**: fog depends on distance *and* altitude, so valleys are hazier than summits and far ranges turn
-  blue. Horizontal visibility still matches the HUD. Valley mist banks drift with the wind, and wind-blown snow and
+  blue. Storm visibility still matches the HUD. Finite, soft valley cloud banks drift with the wind, and wind-blown snow and
   spindrift streaks scale with the wind shown on the HUD.
 - **Climber**: built from rounded shapes on a joint hierarchy: quilted red down suit, harness with carabiners and
   the rope tied in, crampons on tall boots, a pack with the oxygen cylinder, regulator, hose and mask (shown while
   oxygen is on), mirrored goggles, a helmet with the logo decal, and a real ice axe. Animations: walking, a cane axe
   on easy ground, planting it on steep ground, careful steps on ladders, breathing that quickens with hypoxia,
-  falls and the skiing stance.
+  falls and the skiing stance. Sculpted down baffles and ground-aware feet improve the silhouette and posture;
+  nearby ropes sag and subdivided flags deform in the wind.
+
+See [the issue 13 implementation and comparison notes](docs/visual-fidelity.md) for shader corrections,
+asset attribution, shared geometry, validation and remaining hardware/volumetric-cloud work.
 
 **The helmet logo** is the decal texture `assets/redbull-logo.png` (path: `VISUALS.helmetLogoUrl` in
 `src/config.js`). The file in the repo is a neutral "LOGO" stand-in; replace it with your transparent PNG

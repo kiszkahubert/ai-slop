@@ -11,6 +11,9 @@ import { PEAKS } from './geo.js';
 import { CampVisuals } from '../render/campVisuals.js';
 import { CrevasseField } from './crevasses.js';
 import { CrevasseVisuals } from '../render/crevasses.js';
+import { createFlagMaterial, prepareFlagMesh } from '../render/flags.js';
+import { buildRouteWear } from '../render/routeWear.js';
+import { RouteFeatures } from './routeFeatures.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -123,8 +126,8 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
 
   // ---------------- route wands and boot track
   const poles = instanced(scene, new THREE.CylinderGeometry(0.025, 0.025, 1.5, 5), new THREE.MeshStandardMaterial({ color: 0x5a4632 }), 1200, false);
-  const flagGeo = new THREE.PlaneGeometry(0.4, 0.26); flagGeo.translate(0.2, 0, 0);
-  const flags = instanced(scene, flagGeo, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.8 }), 1200, false);
+  const flagGeo = new THREE.PlaneGeometry(0.4, 0.26, 12, 5); flagGeo.translate(0.2, 0, 0);
+  const flags = prepareFlagMesh(instanced(scene, flagGeo, createFlagMaterial(), 1200));
   for (const c of CLIMBS) {
     const route = routes[c.route], col = c.color;
     let side = 1;
@@ -172,7 +175,8 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
   for (const cv of world.crevasses) {
     if (cv.ladder) ladder(field, cv, rungs);
   }
-  for(const c of CLIMBS)bootTrack(scene, field, routes[c.route], world.crevasseField);
+  world.routeFeatures=new RouteFeatures(scene,field,routes,world.crevasseField);
+  world.routeWear=buildRouteWear(scene,field,routes,world.crevasseField);
 
   // ---------------- seracs
   const sg = new THREE.IcosahedronGeometry(1, 1), n2 = makeNoise2D(mulberry32(seed + 77)), sp = sg.attributes.position;
@@ -229,31 +233,24 @@ function peakTop(core, backdrop, pk) {
   return best;
 }
 
-function bootTrack(scene, field, route, holes) {
-  const pos = [], idx = []; let k = 0;
-  for (let s = 0; s <= route.L; s += 3) {
-    const p = route.at(s);
-    for (const sg of [-1, 1]) { const x = p.x - p.dz * 0.7 * sg, z = p.z + p.dx * 0.7 * sg; pos.push(x, field.height(x, z) + 0.05, z); }
-    if (k > 0) { const a = (k - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-    k++;
-  }
-  const g = new THREE.BufferGeometry();
-  const cut=[];
-  for(let i=0;i<idx.length;i+=3)for(const p of holes.cutTriangle(idx.slice(i,i+3).map(k=>pos.slice(k*3,k*3+3))))cut.push(...p);
-  g.setAttribute('position', new THREE.Float32BufferAttribute(cut, 3)); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x7f8b98, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
-  mesh.renderOrder = 1; scene.add(mesh);
-}
-
 function rope(scene, field, d) {
   const pts = [];
-  for (let s = d.s0; s <= d.s1 + 0.01; s += 2.5) {
-    const p = d.route.at(Math.min(s, d.s1)), x = p.x + p.dz * 1.0, z = p.z - p.dx * 1.0;
-    pts.push(new THREE.Vector3(x, field.height(x, z) + 0.85, z));
+  for (let s = d.s0; s < d.s1 + 2.5; s += 2.5) {
+    const distance=Math.min(s,d.s1)-d.s0,p = d.route.at(d.s0+distance), x = p.x + p.dz * 1.0, z = p.z - p.dx * 1.0;
+    const span=Math.min(25,d.s1-(d.s0+Math.floor(distance/25)*25));
+    const sag=.3*Math.sin(Math.PI*Math.min(distance%25,span)/Math.max(span,.01));
+    pts.push(new THREE.Vector3(x, field.height(x, z) + 0.85 - Math.max(0,sag), z));
+    if(s>=d.s1)break;
   }
-  const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, 0.04, 5, false);
-  scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.6 })));
+  // Linear spans avoid Catmull-Rom overshoot through the rugged native surface.
+  const curve=new THREE.Curve();curve.getPoint=(t,target=new THREE.Vector3())=>{
+    const f=t*(pts.length-1),i=Math.min(pts.length-2,Math.floor(f));return target.copy(pts[i]).lerp(pts[i+1],f-i);
+  };
+  const geo = new THREE.TubeGeometry(curve, pts.length * 2, 0.012, 6, false);
+  const mesh=new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.8 }));
+  mesh.castShadow=mesh.receiveShadow=true;scene.add(mesh);
   const stakes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.04, 0.04, 1.0, 5), new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.6 }), Math.ceil(pts.length / 10) + 1);
+  stakes.castShadow=stakes.receiveShadow=true;
   stakes.count = 0;
   for (let i = 0; i < pts.length; i += 10) add(stakes, pts[i].x, pts[i].y - 0.45, pts[i].z);
   finish(stakes); scene.add(stakes);
@@ -291,7 +288,8 @@ function prayerFlags(scene, field, x, y, z, lines, length, height, r) {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, height, 6), new THREE.MeshStandardMaterial({ color: 0x6b5236 }));
   pole.position.set(x, y + height / 2 - 1, z); pole.castShadow = true; scene.add(pole);
   const per = Math.ceil(length / 0.55);
-  const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.9 }), lines * per);
+  const geo=new THREE.PlaneGeometry(0.34,0.24,12,5);geo.translate(.17,0,0);
+  const im = prepareFlagMesh(new THREE.InstancedMesh(geo,createFlagMaterial(),lines * per));
   im.count = 0;
   const COLS = [0x1e5bd8, 0xf2f2f2, 0xd8261c, 0x1f9e3a, 0xf2c200];
   const top = new THREE.Vector3(x, y + height - 1, z);

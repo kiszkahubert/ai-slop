@@ -2,7 +2,7 @@
   "name": "everest-south-col-expedition",
   "version": "2.1.0",
   "private": true,
-  "description": "Browser mountaineering simulator of the Everest–Lhotse massif on the 4 m Pléiades terrain (Three.js).",
+  "description": "Browser mountaineering simulator of the Everest\u2013Lhotse massif on the 4 m Pl\u00e9iades terrain (Three.js).",
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -10,12 +10,14 @@
   "scripts": {
     "build:render": "node tools/build-render.mjs",
     "test:rt": "node tests/harness.mjs tests/ray-tracing.json",
+    "test:visual": "node tests/harness.mjs tests/visual-fidelity.json",
+    "capture:visual": "node tools/capture-fidelity.mjs",
     "benchmark:rt": "node tests/harness.mjs tests/ray-tracing-benchmark.json",
     "start": "node tools/start.mjs",
     "start:offline": "node tools/start.mjs --offline",
     "lint": "eslint .",
     "test:unit": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "node tests/harness.mjs tests/terrain.json && node tests/harness.mjs tests/graphics.json && node tests/harness.mjs tests/postfx_nan.json && node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/crevasses.json && node tests/harness.mjs tests/basecamp.json && node tests/harness.mjs tests/camp-models.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/memorials.json && node tests/harness.mjs tests/extras.json && node tests/harness.mjs tests/physics.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json && node tests/harness.mjs tests/expedition_nuptse.json",
+    "test:e2e": "node tests/harness.mjs tests/terrain.json && node tests/harness.mjs tests/visual-fidelity.json && node tests/harness.mjs tests/graphics.json && node tests/harness.mjs tests/postfx_nan.json && node tests/harness.mjs tests/hazards.json && node tests/harness.mjs tests/crevasses.json && node tests/harness.mjs tests/basecamp.json && node tests/harness.mjs tests/camp-models.json && node tests/harness.mjs tests/ui.json && node tests/harness.mjs tests/freeview.json && node tests/harness.mjs tests/memorials.json && node tests/harness.mjs tests/extras.json && node tests/harness.mjs tests/physics.json && node tests/harness.mjs tests/expedition.json && node tests/harness.mjs tests/expedition_lhotse.json && node tests/harness.mjs tests/expedition_nuptse.json",
     "test": "npm run test:unit && npm run test:e2e",
     "build-assets": "node tools/run-python.mjs tools/build_pleiades_assets.py",
     "build-route:nuptse": "node tools/run-python.mjs tools/build_nuptse_route.py",

@@ -1,5 +1,5 @@
 // Terrain shading, injected into MeshStandardMaterial:
-//  - four procedural layers (rock, snow, ice/firn, moraine), each with albedo, normal, roughness and AO, sampled
+//  - photographed rock and procedural snow/ice/moraine, each with albedo, normal, roughness and AO, sampled
 //    with TRIPLANAR mapping (whiteout normal blend) so nothing stretches on steep faces;
 //  - layers blended by altitude, slope, glacier and rock masks (the same masks the game always used), the Yellow Band
 //    tinting the rock between ~7,430 and 7,670 m;
@@ -63,11 +63,14 @@ export function createTerrainMaterial(opts) {
       .replace('#include <opaque_fragment>', `
         {
           // sun glints on snow crystals: sparse facets that twinkle as the view moves
-          vec3 cell = floor( vWPos * 22.0 );
+          vec3 cell = floor( vWPos * 18.0 );
           vec3 vd = normalize( cameraPosition - vWPos );
-          float hsh = fract( sin( dot( cell + floor( vd * 30.0 ), vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
+          float hsh = fract( sin( dot( cell, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
+          vec3 facet = normalize( tNrm + vec3( hsh - 0.5, 0.0, fract(hsh * 17.0) - 0.5 ) * 0.35 );
           float ndl = max( dot( tNrm, uSunDir ), 0.0 );
-          float glint = step( 0.9965, hsh ) * ndl * tSnow * uSnowFx.x * macroSunShadow( vWPos )
+          float resolved = 1.0 - smoothstep( 0.025, 0.09, max(length(dFdx(vWPos)), length(dFdy(vWPos))) );
+          float glint = smoothstep(0.985, 1.0, hsh) * pow(max(dot(facet, normalize(vd + uSunDir)), 0.0), 320.0)
+            * resolved * ndl * tSnow * uSnowFx.x * macroSunShadow( vWPos )
             * ( 1.0 - smoothstep( 25.0, 70.0, length( cameraPosition - vWPos ) ) );
           outgoingLight += uSunColor * glint * 1.8;
         }
@@ -136,7 +139,7 @@ void triLayer( float L, vec3 p, vec3 n, vec3 bw, float s, float strength, vec3 d
     vec2 uv = p.zy * s, gx = dx.zy * s, gy = dy.zy * s;
     vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
-    nn += vec3( t + n.zy, abs( n.x ) ).zyx * bw.x; a += A.rgb * bw.x; r += B.z * bw.x; o += B.w * bw.x;
+    nn += vec3( t + n.zy, n.x ).zyx * bw.x; a += A.rgb * bw.x; r += B.z * bw.x; o += B.w * bw.x;
   }
   if ( bw.y > 0.0 ) {
     vec2 uv = p.xz * s, gx = dx.xz * s, gy = dy.xz * s;
@@ -144,13 +147,13 @@ void triLayer( float L, vec3 p, vec3 n, vec3 bw, float s, float strength, vec3 d
     vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
     if ( L == 1.0 ) t = t * sastrugi();
-    nn += vec3( t + n.xz, abs( n.y ) ).xzy * bw.y; a += A.rgb * bw.y; r += B.z * bw.y; o += B.w * bw.y;
+    nn += vec3( t + n.xz, n.y ).xzy * bw.y; a += A.rgb * bw.y; r += B.z * bw.y; o += B.w * bw.y;
   }
   if ( bw.z > 0.0 ) {
     vec2 uv = p.xy * s, gx = dx.xy * s, gy = dy.xy * s;
     vec4 A = TSAMPLE( uAlbedo, uv, L, gx, gy ), B = TSAMPLE( uSurface, uv, L, gx, gy );
     vec2 t = ( B.xy * 2.0 - 1.0 ) * strength;
-    nn += vec3( t + n.xy, abs( n.z ) ) * bw.z; a += A.rgb * bw.z; r += B.z * bw.z; o += B.w * bw.z;
+    nn += vec3( t + n.xy, n.z ) * bw.z; a += A.rgb * bw.z; r += B.z * bw.z; o += B.w * bw.z;
   }
   float bs = bw.x + bw.y + bw.z;
   alb += a / bs * w; nrm += nn / bs * w; rough += r / bs * w; ao += o / bs * w;
@@ -164,7 +167,10 @@ void layer( float L, vec3 p, vec3 n, vec3 bw, float mixN, float camD, float ns, 
   #if TERRAIN_ANTI_TILING
     vec3 sw = vec3( 1.0, 1.0, -1.0 );
     triLayer( L, p, n, bw, s, k, dx, dy, alb, nrm, rough, ao, w * ( 1.0 - mixN ) );
-    triLayer( L, p.zyx * sw + 37.0, n.zyx * sw, bw.zyx, s * 0.37, k, dx.zyx * sw, dy.zyx * sw, alb, nrm, rough, ao, w * mixN );
+    vec3 rotatedNormal = vec3(0.0);
+    triLayer( L, p.zyx * sw + 37.0, n.zyx * sw, bw.zyx, s * 0.37, k, dx.zyx * sw, dy.zyx * sw, alb, rotatedNormal, rough, ao, w * mixN );
+    // Inverse of R(v) = v.zyx * sw. Accumulate only in the original world basis.
+    nrm += (rotatedNormal * sw).zyx;
   #else
     triLayer( L, p, n, bw, s, k, dx, dy, alb, nrm, rough, ao, w );
   #endif
@@ -172,7 +178,7 @@ void layer( float L, vec3 p, vec3 n, vec3 bw, float mixN, float camD, float ns, 
     float near = 1.0 - smoothstep( 30.0, 120.0, camD );
     if ( near > 0.0 ) {
       vec3 ma = vec3( 0.0 ), mn = vec3( 0.0 ); float mr = 0.0, mo = 0.0;
-      triLayer( L, p + 11.0, n, bw, uTile.y, uTile.w, dx, dy, ma, mn, mr, mo, 1.0 );
+      triLayer( L, p + 11.0, n, bw, uTile.y, uTile.w * ns, dx, dy, ma, mn, mr, mo, 1.0 );
       nrm += ( mn - n ) * w * near;
     }
   #endif
@@ -180,8 +186,9 @@ void layer( float L, vec3 p, vec3 n, vec3 bw, float mixN, float camD, float ns, 
 `;
 
 // The tracer samples the same authored layer blend with a ray footprint instead of screen derivatives.
+export const terrainNormalShader = () => FRAG_PARS.replace(/varying[^;]+;/g, '');
 export function terrainSampleShader() {
-  const pars = FRAG_PARS.replace(/varying[^;]+;/g, '');
+  const pars = terrainNormalShader();
   const body = FRAG_COLOR.replace('vec3 n0 = normalize( vWNrm );', '')
     .replace('float camD = length( vWPos - cameraPosition );', '')
     .replace('vec3 dpx = dFdx( q ), dpy = dFdy( q );', '')
@@ -219,6 +226,9 @@ const FRAG_COLOR = `
   float rk = smoothstep( 0.2, 0.4, slope );
   float wR = rk, wM = 1.0 - rk, wS = 0.0, wI = 0.0;
   float snowAmt = 1.0 - smoothstep( 0.36, 0.46, slope + ( n2 - 0.5 ) * 0.14 + ( n3 - 0.5 ) * 0.06 );
+  // Accumulation favours shelves and lee faces; windward steep rock stays exposed.
+  float windward = max(dot(nrm.xz, vec2(uSastrugiCS.x, uSastrugiCS.y)), 0.0);
+  snowAmt *= 1.0 - windward * smoothstep(0.12, 0.4, slope) * 0.42;
   snowAmt *= smoothstep( 5200.0, 5750.0, hgt + ( n1 - 0.5 ) * 350.0 );
   wR *= 1.0 - snowAmt; wM *= 1.0 - snowAmt; wS = snowAmt;
   float blueIce = smoothstep( 0.17, 0.33, slope ) * ( 0.35 + 0.45 * n2 ) * 0.7;     // wind-polished ice on steep snow
@@ -236,12 +246,13 @@ const FRAG_COLOR = `
   vec3 alb = vec3( 0.0 ), nacc = vec3( 0.0 ); float rough = 0.0, ao = 0.0;
   float mixN = smoothstep( 0.3, 0.7, n2 );
   // wind carves sastrugi only in places: elsewhere the snow is smooth
-  float carve = mix( 0.25, 1.0, smoothstep( 0.35, 0.75, n2 * 0.7 + n3 * 0.5 ) ) * ( 1.0 - 0.75 * smoothstep( 0.08, 0.25, slope ) );
+  float carve = mix( 0.06, 0.7, smoothstep( 0.52, 0.78, n2 * 0.65 + n3 * 0.35 ) ) * ( 1.0 - 0.85 * smoothstep( 0.08, 0.25, slope ) );
+  float detailFade = 1.0 - smoothstep(100.0, 1100.0, camD);
   vec3 dpx = dFdx( q ), dpy = dFdy( q );
-  layer( 0.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wR );
-  layer( 1.0, q, nrm, bwT, mixN, camD, carve, dpx, dpy, alb, nacc, rough, ao, wS );
-  layer( 2.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wI );
-  layer( 3.0, q, nrm, bwT, mixN, camD, 1.0, dpx, dpy, alb, nacc, rough, ao, wM );
+  layer( 0.0, q, nrm, bwT, mixN, camD, mix(0.18, 0.75, detailFade), dpx, dpy, alb, nacc, rough, ao, wR );
+  layer( 1.0, q, nrm, bwT, mixN, camD, carve * detailFade, dpx, dpy, alb, nacc, rough, ao, wS );
+  layer( 2.0, q, nrm, bwT, mixN, camD, mix(0.15, 0.7, detailFade), dpx, dpy, alb, nacc, rough, ao, wI );
+  layer( 3.0, q, nrm, bwT, mixN, camD, mix(0.15, 0.8, detailFade), dpx, dpy, alb, nacc, rough, ao, wM );
   // texture detail fades into the macro colour far away (the mip chain averages it anyway)
   float far = smoothstep( 2500.0, 9000.0, camD );
   tNrm = normalize( mix( nacc, nrm, far * 0.6 ) );
@@ -250,7 +261,7 @@ const FRAG_COLOR = `
   // ---- colour: macro variation, the Yellow Band, the rock strata
   float bandN = ( n1 - 0.5 ) * 140.0 + ( n4 - 0.5 ) * 60.0;
   float yb = smoothstep( 7430.0, 7480.0, hgt + bandN ) * ( 1.0 - smoothstep( 7610.0, 7670.0, hgt + bandN ) );
-  vec3 rockTint = mix( vec3( 1.0 ), vec3( 1.9, 1.55, 1.05 ), yb * 0.85 ) * ( 0.8 + 0.45 * n4 ) * ( 0.85 + 0.3 * n1 );
+  vec3 rockTint = mix( vec3( 1.0 ), vec3( 1.5, 1.27, 0.88 ), yb * 0.8 ) * ( 0.9 + 0.2 * n4 ) * ( 0.94 + 0.12 * n1 );
   vec3 snowTint = vec3( 0.97 + 0.05 * n2 );
   vec3 iceTint = mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.05, 1.02, 0.98 ), n3 );
   vec3 morTint = vec3( 0.85 + 0.3 * n2 );

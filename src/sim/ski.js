@@ -90,7 +90,7 @@ export function updateSki(dt, ctl) {
   nx = clamp(sx, field.x0 + 100, field.x1 - 100); nz = clamp(sz, field.z0 + 100, field.z1 - 100);
   // speed wobble: past ~120 km/h the skis chatter and you can lose them
   if (K.speed > SKI.wobble && !game.free && Math.random() < ((K.speed - SKI.wobble) / 10) ** 2 * (K.tuck ? 1 : 0.6) * dt) {
-    P.x = nx; P.z = nz; P.y = field.height(nx, nz); P.ski = null;
+    P.x = nx; P.z = nz; P.y = groundHeight(game,nx,nz); P.ski = null;
     game.physics?.startFall({reason:'lost ski edge',region:region(),velocity:{x:vx,y:grade*hv,z:vz}});
     return;
   }
@@ -99,7 +99,7 @@ export function updateSki(dt, ctl) {
   P.x = nx; P.z = nz; P.y = sweep.support.height;
   K.u = u; K.w = w;
   // the skis follow the slope along their length
-  K.pitch = Math.atan((field.height(P.x + hx, P.z + hz) - field.height(P.x - hx, P.z - hz)) / 2);
+  K.pitch = Math.atan((groundHeight(game,P.x+hx,P.z+hz)-groundHeight(game,P.x-hx,P.z-hz))/2);
   P.facing = K.h;
   P.moving = K.speed > 0.5; P.sprint = false; P.grade = clamp(grade, -2, 2); P.onLadder = false;
   P.phase *= 0.9;

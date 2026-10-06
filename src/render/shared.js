@@ -11,6 +11,7 @@ export const SHARED = {
   uSunColor: { value: new THREE.Color(1, 1, 1) },           // sun colour × intensity
   uSkyAmbient: { value: new THREE.Color(0.5, 0.6, 0.8) },   // sky light colour × intensity
   uTime: { value: 0 },
+  uFlagWind: { value: 0 },
 };
 
 /** GLSL: world-space position varying (instancing aware). Vertex side. */
@@ -34,13 +35,16 @@ export const MACRO_SHADOW_PARS = `
 
 /** Multiplies the first directional light (the sun) by the mountain shadow. */
 export function injectSunShadow(fragmentShader, worldVar = 'vSharedWorld') {
-  return fragmentShader.replace(
+  const lights=THREE.ShaderChunk.lights_fragment_begin.replace(
     'getDirectionalLightInfo( directionalLight, directLight );',
     `getDirectionalLightInfo( directionalLight, directLight );
      #if UNROLLED_LOOP_INDEX == 0
        directLight.color *= macroSunShadow( ${worldVar} );
      #endif`,
   );
+  // onBeforeCompile runs before Three resolves includes. Expand this one chunk
+  // explicitly so the patch reaches the direct light, and retain a hook for RT.
+  return fragmentShader.replace('#include <lights_fragment_begin>',`// SUN_LIGHT_BEGIN\n${lights}\n// SUN_LIGHT_END`);
 }
 
 /** Patch a standard material (keeps any existing onBeforeCompile). */

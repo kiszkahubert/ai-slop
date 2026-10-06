@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
-import { TERRAIN } from '../config.js';
+import { TERRAIN, VISUALS } from '../config.js';
 import { mulberry32 } from '../core/noise.js';
 import { sunDirection } from '../sim/weather.js';
 import { setupLighting } from '../render/lighting.js';
@@ -65,14 +65,14 @@ export class Environment {
     const el = sunDirection(time, this.sunVec), w = weather.sample(time);
     const day = smoothstep(-0.1, 0.12, el), dusk = smoothstep(-0.12, 0.02, el) * (1 - smoothstep(0.05, 0.3, el));
     const u = this.sky.material.uniforms;
-    u.sunPosition.value.copy(this.sunVec); u.rayleigh.value = 0.55 + 1.2 * w.S; u.turbidity.value = 1.3 + 8 * w.S;
+    u.sunPosition.value.copy(this.sunVec); u.rayleigh.value = 0.45 + 1.2 * w.S; u.turbidity.value = 1.2 + 8 * w.S;
     this.sky.position.copy(camera.position); this.stars.position.copy(camera.position);
     this.stars.material.opacity = (1 - smoothstep(-0.2, -0.02, el)) * (1 - w.S) * 0.95;
     const cloud = 1 - 0.7 * w.S, P = ctx.player;
-    this.sun.intensity = 3.3 * smoothstep(-0.02, 0.15, el) * cloud;
+    this.sun.intensity = VISUALS.lighting.sun * smoothstep(-0.02, 0.15, el) * cloud;
     this.sun.color.setRGB(1, lerp(0.62, 0.97, smoothstep(0, 0.4, el)), lerp(0.42, 0.92, smoothstep(0, 0.4, el)));
     this.lights.follow(P, this.sunVec);
-    this.hemi.intensity = 0.12 + 1.15 * day;      // thin, clear air: strong blue skylight fills the shadows
+    this.hemi.intensity = VISUALS.lighting.skyNight + VISUALS.lighting.skyDay * day * lerp(1, 1.3, w.S);
     this.hemi.color.setRGB(lerp(0.25, 0.74, day), lerp(0.3, 0.83, day), lerp(0.5, 1.0, day));
     this.moon.intensity = 0.35 * (1 - day) * (1 - w.S * 0.8);
     // headlamp after dark
@@ -85,6 +85,7 @@ export class Environment {
     SHARED.uSunColor.value.copy(this.sun.color).multiplyScalar(this.sun.intensity);
     SHARED.uSkyAmbient.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity);
     SHARED.uTime.value += dt;
+    SHARED.uFlagWind.value = ctx.env.wind;
     // the mountains' shadows: a big jump in time (rest, time of day) recomputes them at once
     if (this.macro && this.macro.enabled) {
       if (this.lastTime === null || Math.abs(time - this.lastTime) > 0.25) this.macro.flush(this.sunVec);
@@ -93,6 +94,7 @@ export class Environment {
     this.lastTime = time;
     // fog from visibility
     this.scene.fog.density = 1.73 / (ctx.env.vis * 1000);
+    this.scene.fog.density += this.mist.localDensity(camera.position) * 0.001 * lerp(.35,1,w.S);
     const fc = this.scene.fog.color, C = this.colors;
     fc.copy(C.night).lerp(C.day, day).lerp(C.dusk, dusk * 0.5 * (1 - w.S)).lerp(C.storm.clone().multiplyScalar(0.15 + 0.85 * day), smoothstep(0.25, 0.8, w.S));
     this.renderer.setClearColor(fc);
@@ -100,7 +102,7 @@ export class Environment {
     const lit = this.macro ? this.macro.sample(P.x, P.z) : 1;
     this.adapt = this.snapAdapt ? lit : this.adapt + (lit - this.adapt) * Math.min(1, dt * 0.8);
     this.snapAdapt = false;
-    this.renderer.toneMappingExposure = lerp(0.95, lerp(1.05, 0.6, this.adapt), day);
+    this.renderer.toneMappingExposure = lerp(0.95, lerp(VISUALS.lighting.exposureShade, VISUALS.lighting.exposureSun, this.adapt), day);
     this.mist.update(dt, camera.position, w, day, ctx.env.wind, w.dir, fc, this.sun.color);
     const spindrift = smoothstep(55, 110, ctx.env.wind) * (P.y > 7000 ? 0.6 : 0.2);
     this.snow.update(dt, camera.position, clamp(smoothstep(0.25, 0.8, w.S) + spindrift, 0, 1), ctx.env.wind, w.dir, day);
