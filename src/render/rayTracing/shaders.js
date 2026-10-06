@@ -14,7 +14,7 @@ layout(location=1) out vec4 outSun;
 uniform sampler2D uPreviousIrr,uPreviousSun,uMasks;
 uniform vec4 uCacheRect,uMaskRect;
 uniform int uField;
-uniform float uFrame,uReset,uSunOnly;
+uniform float uFrame,uReset,uSunOnly,uMaxCount;
 ${HEIGHT_TRACE}
 ${RANDOM_GLSL}
 ${OCT}
@@ -44,7 +44,9 @@ void main(){
     irr=alb*(uSkyAmbient*mix(.25,1.0,max(hn.y,0.0))+uSunColor*max(dot(hn,sd),0.0)*(shadow<0.0?1.0:0.0));
     bent=n;
   }
-  float count=min(old.a*uReset,15.0),alpha=1.0/(count+1.0);
+  // A running average over the last few updates: it converges quickly and then follows the sun as it moves,
+  // instead of being thrown away (which made the lighting drop out and flicker every few seconds).
+  float count=min(old.a*uReset,uMaxCount),alpha=1.0/(count+1.0);
   gl_FragColor=vec4(mix(old.rgb,irr,alpha),count+1.0);
   vec3 previous=count>0.0?octDecode(oldSun.ba):n;
   outSun=vec4(mix(oldSun.rg,vec2(full<0.0?1.0:0.0,farSun<0.0?1.0:0.0),alpha),octEncode(normalize(mix(previous,bent,alpha))));
@@ -88,9 +90,10 @@ void main(){
   float sun=1.0;if(uSunDir.y>0.0&&localHit(p+geometricNormal*.12,sd,256.0,q,hn,alb))sun=0.0;
   vec3 irr=cached(p).rgb;
   if(localHit(p+geometricNormal*.12,dir,128.0,q,hn,alb)){
-    vec3 qq,nn,aa;float lit=localHit(q+hn*.12,sd,256.0,qq,nn,aa)?0.0:1.0;
-    float distant=texture2D(uCacheSun,clamp((q.xz-uCacheRect.xy)*uCacheRect.zw,0.0,1.0)).g;
-    irr=alb*(uSkyAmbient*mix(.25,1.0,max(hn.y,0.0))+uSunColor*max(dot(hn,sd),0.0)*lit*distant);
+    // Two rays per pixel (sun, bounce): the sunlight on the bounce point comes from the landscape cache rather
+    // than a third ray; that loses only the shadows of small props on the surfaces light bounces off.
+    float lit=texture2D(uCacheSun,clamp((q.xz-uCacheRect.xy)*uCacheRect.zw,0.0,1.0)).r;
+    irr=alb*(uSkyAmbient*mix(.25,1.0,max(hn.y,0.0))+uSunColor*max(dot(hn,sd),0.0)*lit);
   }
   gl_FragColor=vec4(irr,sun);
 }
@@ -102,17 +105,20 @@ uniform sampler2D tCurrent,tHistory,tPosition,tPreviousPosition,tNormal,tPreviou
 uniform mat4 uPreviousVP;
 uniform vec3 uOrigin,uPreviousOrigin;
 uniform vec2 uTexel;
-uniform float uHistory,uReuse;
+uniform float uHistory;
 void main(){
   vec4 p=texture2D(tPosition,vUv),cur=texture2D(tCurrent,vUv);if(p.a<.5){gl_FragColor=cur;return;}
   vec4 clip=uPreviousVP*vec4(p.xyz+uOrigin,1);vec2 uv=clip.xy/clip.w*.5+.5;
   vec4 oldP=texture2D(tPreviousPosition,uv);vec3 n=texture2D(tNormal,vUv).xyz,oldN=texture2D(tPreviousNormal,uv).xyz;
   bool valid=uHistory>.5&&clip.w>0.0&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)))&&oldP.a>.5;
   valid=valid&&length(oldP.xyz+uPreviousOrigin-p.xyz-uOrigin)<max(.25,length(p.xyz)*.0001)&&dot(n,oldN)>.9;
-  if(uReuse>.5){gl_FragColor=valid?texture2D(tHistory,uv):vec4(0,0,0,-1);return;}
-  vec4 lo=cur,hi=cur;
-  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){vec4 c=texture2D(tCurrent,vUv+vec2(x,y)*uTexel);lo=min(lo,c);hi=max(hi,c);}
-  vec4 hist=clamp(texture2D(tHistory,uv),lo,hi);gl_FragColor=mix(cur,hist,valid?.85:0.0);
+  // Clamp the history to the statistics of the current neighbourhood (mean +- 1.25 sigma) rather than its
+  // min/max: with one noisy sample per pixel the min/max box throws history away and the result shimmers.
+  vec4 m1=vec4(0),m2=vec4(0);
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){vec4 c=texture2D(tCurrent,vUv+vec2(x,y)*uTexel);m1+=c;m2+=c*c;}
+  m1/=9.0;vec4 sigma=sqrt(max(m2/9.0-m1*m1,vec4(0)));
+  vec4 hist=clamp(texture2D(tHistory,uv),m1-1.25*sigma,m1+1.25*sigma);
+  gl_FragColor=mix(cur,hist,valid?.9:0.0);
 }
 `;
 export const FILTER_FRAG = `

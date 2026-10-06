@@ -5,7 +5,7 @@ import { MeshBVH } from 'three-mesh-bvh';
 import { buildHeightHierarchy, referenceHeightHit, triangleHit } from '../../src/render/rayTracing/heightHierarchy.js';
 import { buildRegion } from '../../src/render/rayTracing/worker.js';
 import { CrevasseField } from '../../src/world/crevasses.js';
-import { lightingSize, regionOrigin, RT_LIMITS } from '../../src/render/rayTracing/settings.js';
+import { lightingSize, regionOrigin, RT_LIMITS, shouldResetCaches, nextScale } from '../../src/render/rayTracing/settings.js';
 
 test('height bounds include shared edge vertices and odd-sized parent blocks',()=>{
   const f={nx:10,nz:7,h:Float32Array.from({length:70},(_,i)=>Math.sin(i)*10)};
@@ -38,3 +38,18 @@ test('screen and anchor budgets stay bounded at large resolutions',()=>{
   assert.deepEqual(lightingSize(3840,2160),[960,540]);assert.deepEqual(lightingSize(1920,1080,.25),[480,270]);
   assert.deepEqual(regionOrigin({x:-1,z:129}),[-128,128]);assert.equal(RT_LIMITS.memory,268435456);
 });
+test('landscape caches follow a moving sun and restart only on a discontinuity',()=>{
+  const sun=new THREE.Vector3(0.3,0.8,0.5).normalize(),moved=sun.clone().applyAxisAngle(new THREE.Vector3(0,1,0),0.004);
+  assert.equal(shouldResetCaches(10,10.01,sun,moved),false,'a frame of normal sun motion keeps the caches');
+  assert.equal(shouldResetCaches(10,12,sun,sun),true,'resting at camp restarts them');
+  assert.equal(shouldResetCaches(10,10,sun,sun.clone().applyAxisAngle(new THREE.Vector3(0,1,0),0.3)),true,'a new time of day restarts them');
+  assert.equal(shouldResetCaches(null,10,sun,sun),true);
+});
+test('local lighting resolution adapts to GPU time, or to frame time when GPU timers are missing',()=>{
+  assert.equal(nextScale(0.35,null,40),0.25,'slow frames without timers step down');
+  assert.equal(nextScale(0.25,null,40),0.18);assert.equal(nextScale(0.18,null,40),0.18,'never below the floor');
+  assert.equal(nextScale(0.25,null,15),0.35,'fast frames step back up');
+  assert.equal(nextScale(0.35,8,15),0.25,'GPU time wins when it is measured');
+  assert.equal(nextScale(0.35,1,15,0.25),0.25,'the memory limit caps the scale');
+});
+test('a scale below the lowest step (memory guard) stays at the bottom',()=>{assert.equal(nextScale(0.1,null,15,0.1),0.1);assert.equal(nextScale(0.1,null,40,0.1),0.1);});

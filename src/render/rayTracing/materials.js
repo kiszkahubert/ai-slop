@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OCT } from './shaders.js';
+import { SHARED } from '../shared.js';
 
 export const BLACK = new THREE.DataTexture(new Float32Array(4),1,1,THREE.RGBAFormat,THREE.FloatType);BLACK.needsUpdate=true;
 export const RT_SHARED = {
@@ -8,9 +9,13 @@ export const RT_SHARED = {
   uRtCoreRect:{value:new THREE.Vector4()},uRtBackRect:{value:new THREE.Vector4()},
   uRtLocal:{value:BLACK},uRtPosition:{value:BLACK},uRtNormal:{value:BLACK},uRtLocalReady:{value:0},
   uRtDynamicShadow:{value:BLACK},uRtDynamicMatrix:{value:new THREE.Matrix4()},uRtDynamicSize:{value:new THREE.Vector2(1024,1024)},
+  uRtStrength:{value:1.5},
+  uRtDebug:{value:0},                          // 1 blend, 2 near-camera coverage, 3 traced ambient, 4 traced sun visibility
+  uRtSky:{value:SHARED.uSkyAmbient.value},     // the same Color object, so it follows the sky without copying
 };
 export const MATERIAL_PARS = `
-uniform float uRtEnabled,uRtLocalReady;
+uniform float uRtEnabled,uRtLocalReady,uRtStrength,uRtDebug;
+uniform vec3 uRtSky;
 uniform vec3 uRtOrigin,uRtCamera;
 uniform vec2 uRtResolution,uRtDynamicSize;
 uniform vec4 uRtCoreRect,uRtBackRect;
@@ -33,12 +38,24 @@ vec4 rtLocalValue(vec3 p,vec3 n,out float weight){
   }
   weight=(1.0-smoothstep(80.0,120.0,length(p-uRtCamera)))*smoothstep(.1,.6,ws);return sum/max(ws,.0001);
 }
-vec3 rtIrradiance(vec3 p,vec3 n){
-  vec4 c=rtCache(p),s=rtSunCache(p);vec3 bent=octDecode(s.ba);float directional=clamp(.7+.3*dot(n,bent),.4,1.0);
-  float w;vec4 local=rtLocalValue(p,n,w);return mix(c.rgb*directional,local.rgb,w);
+// Everything the material needs is looked up once per fragment (rtPrepare) and reused by the ambient, sun and
+// shadow terms; the lookups are the expensive part of the forward pass.
+bool gRtReady=false;float gRtBlend=0.0,gRtLocalW=0.0;vec4 gRtCache=vec4(0.0),gRtSun=vec4(0.0),gRtLocal=vec4(0.0);
+void rtPrepare(vec3 p,vec3 n){
+  if(gRtReady)return;gRtReady=true;if(uRtEnabled<.5)return;
+  gRtCache=rtCache(p);gRtSun=rtSunCache(p);
+  gRtBlend=smoothstep(0.0,4.0,gRtCache.a)*step(.00001,dot(gRtSun.ba,vec2(1)));
+  if(gRtBlend>0.0)gRtLocal=rtLocalValue(p,n,gRtLocalW);
 }
-float rtSunVisibility(vec3 p,vec3 n){float w;vec4 local=rtLocalValue(p,n,w);vec4 s=rtSunCache(p);return mix(s.r,local.a*s.g,w);}
-float rtLocalWeight(vec3 p,vec3 n){float w;rtLocalValue(p,n,w);return w>0.0?w*rtBlend(p):0.0;}
+vec3 rtIrradiance(vec3 p,vec3 n){
+  rtPrepare(p,n);vec3 bent=octDecode(gRtSun.ba);float directional=clamp(.7+.3*dot(n,bent),.4,1.0);
+  vec3 traced=mix(gRtCache.rgb*directional,gRtLocal.rgb,gRtLocalW);
+  // Strength > 1 exaggerates what tracing changes relative to an open sky: occluded light darker, bounce brighter.
+  vec3 sky=max(uRtSky,vec3(1e-4));
+  return sky*pow(max(traced,vec3(0.0))/sky,vec3(uRtStrength));
+}
+float rtSunVisibility(vec3 p,vec3 n){rtPrepare(p,n);return mix(gRtSun.r,gRtLocal.a*gRtSun.g,gRtLocalW);}
+float rtLocalWeight(vec3 p,vec3 n){rtPrepare(p,n);return gRtLocalW*gRtBlend;}
 float rtDynamicShadow(vec3 p){
   vec4 c=uRtDynamicMatrix*vec4(p,1);c.xyz/=c.w;
   if(any(lessThan(c.xyz,vec3(0)))||any(greaterThan(c.xyz,vec3(1))))return 1.0;
@@ -57,13 +74,20 @@ export function patchRayTracingMaterial(mat) {
     prev(sh,r);Object.assign(sh.uniforms,RT_SHARED);
     sh.fragmentShader=MATERIAL_PARS+'\n'+sh.fragmentShader;
     // Material evaluation stays forward rendered. The new term replaces ambient diffuse before AO/fog.
+    sh.fragmentShader=sh.fragmentShader.replace('#include <opaque_fragment>',`
+      if(uRtDebug>0.5){
+        vec3 rtDn=normalize((vec4(normal,0.0)*viewMatrix).xyz);rtPrepare(${world},rtDn);
+        outgoingLight=uRtDebug<1.5?vec3(gRtBlend):uRtDebug<2.5?vec3(gRtLocalW*gRtBlend,gRtBlend*(1.0-gRtLocalW),0.0)
+          :uRtDebug<3.5?rtIrradiance(${world},rtDn)*0.35:vec3(rtSunVisibility(${world},rtDn));
+      }
+      #include <opaque_fragment>`);
     sh.fragmentShader=sh.fragmentShader.replace('#include <aomap_fragment>',`
-      float rtAmount=rtBlend(${world});
       vec3 rtWorldNormal=normalize((vec4(normal,0.0)*viewMatrix).xyz);
+      rtPrepare(${world},rtWorldNormal);float rtAmount=gRtBlend;
       if(rtAmount>0.0)reflectedLight.indirectDiffuse=mix(reflectedLight.indirectDiffuse,rtIrradiance(${world},rtWorldNormal)*material.diffuseColor/3.14159265,rtAmount);
       #include <aomap_fragment>`);
     if(mat.userData.rtTerrain){
-      sh.fragmentShader=sh.fragmentShader.replace('tAO = ao * bakedAO;',`tAO = ao * mix(bakedAO,1.0,rtBlend(vWPos));`)
+      sh.fragmentShader=sh.fragmentShader.replace('tAO = ao * bakedAO;',`rtPrepare(vWPos,tNrm);tAO = ao * mix(bakedAO,1.0,gRtBlend);`)
         .replace('tSnow * uSnowFx.y * vec3', 'tSnow * uSnowFx.y * (1.0-rtAmount) * vec3');
     }
     // Expand only this material's light chunk, retaining Three's other light and BRDF handling.
@@ -71,13 +95,13 @@ export function patchRayTracingMaterial(mat) {
     let lights=expanded?expanded[1]:THREE.ShaderChunk.lights_fragment_begin;
     // Covered pixels use traced sun visibility rather than multiplying it by
     // the fallback macro shadow a second time.
-    lights=lights.replace(`macroSunShadow( ${world} )`,`mix(macroSunShadow( ${world} ),1.0,rtBlend(${world}))`);
     lights=lights.replace('getDirectionalLightInfo( directionalLight, directLight );',`
       getDirectionalLightInfo(directionalLight,directLight);
       #if UNROLLED_LOOP_INDEX == 0
-      vec3 rtN=normalize((vec4(normal,0.0)*viewMatrix).xyz);
-      if(uRtEnabled>.5)directLight.color*=mix(1.0,rtSunVisibility(${world},rtN),rtBlend(${world}));
+      vec3 rtN=normalize((vec4(normal,0.0)*viewMatrix).xyz);rtPrepare(${world},rtN);
+      if(uRtEnabled>.5)directLight.color*=mix(1.0,rtSunVisibility(${world},rtN),gRtBlend);
       #endif`);
+    lights=lights.replace(`macroSunShadow( ${world} )`,`mix(macroSunShadow( ${world} ),1.0,gRtBlend)`);
     lights=lights.replace('directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;',`
       float stockShadow=(directLight.visible&&receiveShadow)?getShadow(directionalShadowMap[i],directionalLightShadow.shadowMapSize,directionalLightShadow.shadowBias,directionalLightShadow.shadowRadius,vDirectionalShadowCoord[i]):1.0;
       #if UNROLLED_LOOP_INDEX == 0
@@ -88,7 +112,7 @@ export function patchRayTracingMaterial(mat) {
       #endif`);
     sh.fragmentShader=expanded?sh.fragmentShader.replace(expanded[0],lights):sh.fragmentShader.replace('#include <lights_fragment_begin>',lights);
   };
-  mat.customProgramCacheKey=()=>key()+'|rt-forward-v1';mat.needsUpdate=true;
+  mat.customProgramCacheKey=()=>key()+'|rt-forward-v2';mat.needsUpdate=true;
 }
 
 export function captureMaterial(source,eligible,origin) {

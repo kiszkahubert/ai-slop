@@ -63,8 +63,10 @@ test('macro sun and traced visibility both reach the expanded lighting chunk',()
   const material=new THREE.MeshStandardMaterial();patchMacroShadow(material);patchRayTracingMaterial(material);
   const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
   material.onBeforeCompile(shader);
-  assert.ok(shader.fragmentShader.includes('mix(macroSunShadow( vSharedWorld ),1.0,rtBlend(vSharedWorld))'));
-  assert.ok(shader.fragmentShader.includes('directLight.color*=mix(1.0,rtSunVisibility(vSharedWorld,rtN),rtBlend(vSharedWorld))'));
+  assert.ok(shader.fragmentShader.includes('mix(macroSunShadow( vSharedWorld ),1.0,gRtBlend)'));
+  assert.ok(shader.fragmentShader.includes('directLight.color*=mix(1.0,rtSunVisibility(vSharedWorld,rtN),gRtBlend)'));
+  // the lighting lookups are prepared once, before the sun term uses them
+  const f=shader.fragmentShader;assert.ok(f.indexOf('rtPrepare(vSharedWorld,rtN)')>=0&&f.indexOf('rtPrepare(vSharedWorld,rtN)')<f.indexOf('mix(macroSunShadow( vSharedWorld ),1.0,gRtBlend)'));
   assert.ok(!shader.fragmentShader.includes('#include <lights_fragment_begin>'));
 });
 

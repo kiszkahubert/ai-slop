@@ -5,7 +5,7 @@ import { SHARED } from '../shared.js';
 import { emit, on } from '../../core/events.js';
 import { SceneCatalog, isDynamic, isVisible } from './catalog.js';
 import { RT_SHARED, BLACK, captureMaterial } from './materials.js';
-import { RT_LIMITS, initialRayTracing, rememberRayTracing, regionOrigin, lightingSize } from './settings.js';
+import { RT_LIMITS, initialRayTracing, rememberRayTracing, regionOrigin, lightingSize, shouldResetCaches, nextScale } from './settings.js';
 import { VERT, CACHE_FRAG, LOCAL_FRAG, TEMPORAL_FRAG, FILTER_FRAG } from './shaders.js';
 import { GpuTimer } from './timer.js';
 
@@ -38,9 +38,9 @@ export class RayTracingLighting {
     this.catalog=new SceneCatalog(scene,world);this.proxies=new Map();this.captureScene=new THREE.Scene();this.dynamicScene=new THREE.Scene();
     this.captureCamera=camera.clone();
     this.frame=0;this.job=0;this.pending=null;this.snapshot=null;this.caches=[];this.textures=[];this.screenTargets=[];
-    this.origin=new THREE.Vector3();this.previousOrigin=new THREE.Vector3();this.previousVP=new THREE.Matrix4();this.historyValid=false;
-    this.scale=.5;this.memoryScaleLimit=.5;this.tileCount=1;this.localUpdateStride=1;this.stats={requested:this.requested,active:false,status:'Off',gpuMs:null,memoryBytes:0,triangles:0,snapshots:0,cacheTiles:0,localUpdateStride:1};
-    this.lastSun=new THREE.Vector3();this.lastSky=new THREE.Color();this.lastTime=null;
+    this.origin=new THREE.Vector3();this.previousOrigin=new THREE.Vector3();this.lastScanPos=new THREE.Vector3();this.lastScanFrame=null;this.previousVP=new THREE.Matrix4();this.historyValid=false;
+    this.scale=RT_LIMITS.startScale;this.memoryScaleLimit=.5;this.frameMs=16.7;this.lastFrameAt=null;this.tileCount=1;this.localUpdateStride=1;this.stats={requested:this.requested,active:false,status:'Off',gpuMs:null,memoryBytes:0,triangles:0,snapshots:0,cacheTiles:0,localUpdateStride:1};
+    this.lastSun=new THREE.Vector3();this.lastTime=null;
     this.timer=new GpuTimer(renderer.getContext());
     this.copy=quad(COPY,{tA:uniform(BLACK),tB:uniform(BLACK)});
     this.depthMaterial=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});
@@ -54,6 +54,8 @@ export class RayTracingLighting {
     this.stats.status=!this.requested?'Off':this.failed?'Unavailable: '+this.failed:this.quality==='low'?'Paused on Low':this.ready?'On — lighting converges while you explore':'Preparing lighting…';
     emit('rayTracingStatus',{...this.stats});
   }
+  /** Debug views: 0 off, 1 blend weight, 2 coverage (red near-camera rays, green landscape cache), 3 traced ambient, 4 traced sun. */
+  debugView(mode=0){RT_SHARED.uRtDebug.value=mode;return mode;}
   setEnabled(value) {
     this.requested=!!value;rememberRayTracing(this.requested);this.historyValid=false;
     RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;this.notify();return this.requested;
@@ -99,10 +101,10 @@ export class RayTracingLighting {
     for(let i=0;i<f.nx*f.nz;i++){masks[i*2]=f.glacier[i];masks[i*2+1]=f.rock[i];}
     this.masks=dataTexture(masks,f.nx,f.nz,THREE.RGFormat,THREE.UnsignedByteType);this.textures.push(this.masks);
     const common={...this.terrainMaterial.userData.uniforms,...SHARED,uMasks:uniform(this.masks),uMaskRect:uniform(rect(f))};
-    this.cacheQuad=quad(CACHE_FRAG,{...common,...this.fieldUniforms,uCacheRect:uniform(rect(f)),uField:uniform(0),uFrame:uniform(0),uReset:uniform(0),uSunOnly:uniform(0),uPreviousIrr:uniform(BLACK),uPreviousSun:uniform(BLACK)});
+    this.cacheQuad=quad(CACHE_FRAG,{...common,...this.fieldUniforms,uCacheRect:uniform(rect(f)),uField:uniform(0),uFrame:uniform(0),uReset:uniform(0),uSunOnly:uniform(0),uMaxCount:uniform(RT_LIMITS.cacheHistory),uPreviousIrr:uniform(BLACK),uPreviousSun:uniform(BLACK)});
     this.localQuad=quad(LOCAL_FRAG,{...common,uPosition:uniform(BLACK),uNormal:uniform(BLACK),uColors:uniform(BLACK),uUvs:uniform(BLACK),uCacheIrr:uniform(BLACK),uCacheSun:uniform(BLACK),uPropAlbedo:uniform(null),uBvh:uniform(null),uOrigin:uniform(this.origin),uCamera:uniform(this.camera.position),uCacheRect:uniform(rect(f)),uFrame:uniform(0)});
     for(const q of [this.cacheQuad,this.localQuad])q.material.defines={TERRAIN_ANTI_TILING:1,TERRAIN_MICRO:0,TERRAIN_GRAD:1};
-    this.temporal=quad(TEMPORAL_FRAG,{tCurrent:uniform(BLACK),tHistory:uniform(BLACK),tPosition:uniform(BLACK),tPreviousPosition:uniform(BLACK),tNormal:uniform(BLACK),tPreviousNormal:uniform(BLACK),uPreviousVP:uniform(this.previousVP),uOrigin:uniform(this.origin),uPreviousOrigin:uniform(this.previousOrigin),uTexel:uniform(new THREE.Vector2()),uHistory:uniform(0),uReuse:uniform(0)});
+    this.temporal=quad(TEMPORAL_FRAG,{tCurrent:uniform(BLACK),tHistory:uniform(BLACK),tPosition:uniform(BLACK),tPreviousPosition:uniform(BLACK),tNormal:uniform(BLACK),tPreviousNormal:uniform(BLACK),uPreviousVP:uniform(this.previousVP),uOrigin:uniform(this.origin),uPreviousOrigin:uniform(this.previousOrigin),uTexel:uniform(new THREE.Vector2()),uHistory:uniform(0)});
     this.filter=quad(FILTER_FRAG,{tInput:uniform(BLACK),tPosition:uniform(BLACK),tNormal:uniform(BLACK),uTexel:uniform(new THREE.Vector2()),uStep:uniform(1)});
     // Irradiance and visibility have independent physical sampling densities.
     for(const [i,spacing,sunOnly] of [[0,64,0],[0,32,1],[1,512,0],[1,320,1]]){
@@ -172,7 +174,23 @@ export class RayTracingLighting {
     }
   }
   updateProxies() {
-    if(this.rebuildProxies){for(const p of this.proxies.values())p.capture.material.dispose();this.proxies.clear();this.captureScene.clear();this.dynamicScene.clear();this.rebuildProxies=false;}
+    if(this.rebuildProxies){for(const p of this.proxies.values())p.capture.material.dispose();this.proxies.clear();this.captureScene.clear();this.dynamicScene.clear();this.rebuildProxies=false;this.lastScanFrame=null;}
+    // Walking the whole scene (and updating every world matrix) is expensive: rescan for meshes entering or
+    // leaving the 160 m capture range every 20 frames or 15 m; in between only sync what is already tracked.
+    const cam=this.camera.position;
+    if(this.lastScanFrame===null||this.lastScanFrame===undefined||this.frame-this.lastScanFrame>=20||this.lastScanPos.distanceTo(cam)>15){
+      this.lastScanFrame=this.frame;this.lastScanPos.copy(cam);this.scanProxies();
+    }
+    for(const [o,p] of this.proxies){
+      if(p.dynamic)o.updateWorldMatrix(true,false);
+      const visible=isVisible(o);
+      for(const proxy of [p.capture,p.shadow])if(proxy){
+        proxy.visible=visible;proxy.matrix.copy(o.matrixWorld);proxy.matrixWorld.copy(o.matrixWorld);
+        if(o.isInstancedMesh){proxy.instanceMatrix=o.instanceMatrix;proxy.instanceColor=o.instanceColor;proxy.count=o.count;proxy.boundingSphere=o.boundingSphere;}
+      }
+    }
+  }
+  scanProxies() {
     const seen=new Set(),sphere=new THREE.Sphere();this.scene.updateMatrixWorld(true);
     this.scene.traverse(o=>{
       if(!o.isMesh||!isVisible(o)||Array.isArray(o.material)||!o.material.isMeshStandardMaterial||o.material.transparent)return;
@@ -182,12 +200,9 @@ export class RayTracingLighting {
       seen.add(o);let p=this.proxies.get(o);const dynamic=isDynamic(o);
       if(!p){
         const make=mat=>o.isInstancedMesh?new THREE.InstancedMesh(o.geometry,mat,o.instanceMatrix.count):new THREE.Mesh(o.geometry,mat);
-        p={capture:make(captureMaterial(o.material,!dynamic,this.origin)),shadow:dynamic&&o.castShadow?make(o.customDepthMaterial||this.depthMaterial):null};
+        p={dynamic,capture:make(captureMaterial(o.material,!dynamic,this.origin)),shadow:dynamic&&o.castShadow?make(o.customDepthMaterial||this.depthMaterial):null};
+        for(const proxy of [p.capture,p.shadow])if(proxy){proxy.matrixAutoUpdate=false;proxy.matrixWorldAutoUpdate=false;proxy.frustumCulled=o.frustumCulled;}
         this.captureScene.add(p.capture);if(p.shadow)this.dynamicScene.add(p.shadow);this.proxies.set(o,p);
-      }
-      for(const proxy of [p.capture,p.shadow])if(proxy){
-        proxy.matrixAutoUpdate=false;proxy.matrix.copy(o.matrixWorld);proxy.frustumCulled=o.frustumCulled;
-        if(o.isInstancedMesh){proxy.instanceMatrix=o.instanceMatrix;proxy.instanceColor=o.instanceColor;proxy.count=o.count;proxy.boundingSphere=o.boundingSphere;}
       }
     });
     for(const [source,p] of this.proxies)if(!seen.has(source)){this.captureScene.remove(p.capture);if(p.shadow)this.dynamicScene.remove(p.shadow);p.capture.material.dispose();this.proxies.delete(source);}
@@ -224,12 +239,11 @@ export class RayTracingLighting {
     RT_SHARED.uRtDynamicShadow.value=this.dynamicTarget.texture;RT_SHARED.uRtDynamicMatrix.value.copy(this.sun.shadow.matrix);
     const u=this.localQuad.material.uniforms;u.uPosition.value=position.texture[0];u.uNormal.value=position.texture[1];u.uFrame.value=this.frame;
     u.uCacheIrr.value=RT_SHARED.uRtCoreIrr.value;u.uCacheSun.value=RT_SHARED.uRtCoreSun.value;
-    const trace=!this.historyValid||this.frame%this.localUpdateStride===0;
-    if(trace)this.draw(this.localQuad,this.raw);
+    this.draw(this.localQuad,this.raw);
     const t=this.temporal.material.uniforms,history=this.history[this.historyIndex];
     t.tCurrent.value=this.raw.texture;t.tHistory.value=this.history[1-this.historyIndex].texture;
     t.tPosition.value=position.texture[0];t.tNormal.value=position.texture[1];t.tPreviousPosition.value=previous.texture[0];t.tPreviousNormal.value=previous.texture[1];
-    t.uTexel.value.set(1/this.w,1/this.h);t.uHistory.value=this.historyValid?1:0;t.uReuse.value=trace?0:1;this.draw(this.temporal,history);
+    t.uTexel.value.set(1/this.w,1/this.h);t.uHistory.value=this.historyValid?1:0;this.draw(this.temporal,history);
     const f=this.filter.material.uniforms;f.tInput.value=history.texture;f.tPosition.value=position.texture[0];f.tNormal.value=position.texture[1];f.uTexel.value.set(1/this.w,1/this.h);
     for(let k=0;k<3;k++){f.uStep.value=1<<k;this.draw(this.filter,this.filters[k%2]);f.tInput.value=this.filters[k%2].texture;}
     RT_SHARED.uRtLocal.value=this.filters[0].texture;RT_SHARED.uRtPosition.value=position.texture[0];RT_SHARED.uRtNormal.value=position.texture[1];RT_SHARED.uRtLocalReady.value=1;
@@ -246,18 +260,20 @@ export class RayTracingLighting {
       if(!this.worker)this.start();if(!this.ready)return;
       this.camera.updateMatrixWorld(true);
       const size=r.getDrawingBufferSize(new THREE.Vector2());this.resize(size.x,size.y);this.requestSnapshot();
-      const sky=SHARED.uSkyAmbient.value;
-      if(this.lastTime===null||Math.abs(time-this.lastTime)>.25||this.lastSun.distanceTo(SHARED.uSunDir.value)>.015||Math.max(Math.abs(this.lastSky.r-sky.r),Math.abs(this.lastSky.g-sky.g),Math.abs(this.lastSky.b-sky.b))>.2){
-        this.resetCaches();this.lastSun.copy(SHARED.uSunDir.value);this.lastSky.copy(SHARED.uSkyAmbient.value);
-      }
+      // The caches are running averages that follow the sun and sky as they change; only a discontinuity
+      // (resting at camp, choosing a time of day) starts them again.
+      if(shouldResetCaches(this.lastTime,time,this.lastSun,SHARED.uSunDir.value))this.resetCaches();
+      this.lastSun.copy(SHARED.uSunDir.value);
       this.lastTime=time;this.frame++;this.timer.poll();this.stats.gpuMs=this.timer.ms;
-      if(this.frame%120===0&&this.timer.ms!==null){
-        const next=Math.min(this.memoryScaleLimit,this.timer.ms>RT_LIMITS.gpuBudget?.25:this.timer.ms<3?.5:this.scale);
-        if(next!==this.scale){this.scale=next;this.resize(size.x,size.y);}
-        this.tileCount=this.timer.ms>RT_LIMITS.gpuBudget?1:2;
-        if(this.scale<=.25&&this.timer.ms>RT_LIMITS.gpuBudget)this.localUpdateStride=2;
-        else if(this.timer.ms<3)this.localUpdateStride=1;
-        this.stats.localUpdateStride=this.localUpdateStride;
+      // Smoothed frame interval: the fallback load signal where GPU timer queries are unavailable
+      // (common on Linux / Mesa), so the lighting still scales down instead of dragging the frame rate.
+      const now=performance.now();if(this.lastFrameAt!==null)this.frameMs+=(Math.min(250,now-this.lastFrameAt)-this.frameMs)*.05;this.lastFrameAt=now;
+      if(this.frame%60===0){
+        const next=nextScale(this.scale,this.timer.ms,this.frameMs,this.memoryScaleLimit);
+        if(next!==this.scale){this.scale=next;this.resize(size.x,size.y);this.historyValid=false;}
+        const slow=this.timer.ms!==null?this.timer.ms>RT_LIMITS.gpuBudget:this.frameMs>RT_LIMITS.frameBudgetMs;
+        this.tileCount=slow?1:2;
+        this.stats.scale=this.scale;this.stats.frameMs=Math.round(this.frameMs*10)/10;
       }
       r.autoClear=false;r.shadowMap.autoUpdate=false;r.setScissorTest(false);
       this.timer.begin();for(let k=0;k<this.tileCount;k++)this.cacheStep();
