@@ -8,6 +8,9 @@ import { routeCrevasse } from './routeHazards.js';
 import { placeMemorials } from './memorials.js';
 import { buildBaseCamp } from './baseCamp.js';
 import { PEAKS } from './geo.js';
+import { CampVisuals } from '../render/campVisuals.js';
+import { CrevasseField } from './crevasses.js';
+import { CrevasseVisuals } from '../render/crevasses.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -50,17 +53,15 @@ export function crevasseLocal(cv, x, z, pad = 0) {
   return Math.abs(u) < cv.len / 2 + pad && Math.abs(v) < cv.w / 2 + pad ? { u, v } : null;
 }
 
-/** opts: { backdrop (outer height field, for peak name tags), basePlan (planBaseCamp result), seed } */
-export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5 } = {}) {
+/** opts: { backdrop, basePlan, seed, quality (graphics preset), anisotropy } */
+export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5, quality, anisotropy = 1 } = {}) {
   const r = mulberry32(seed);
   const H = (x, z) => field.height(x, z);
   const world = { camps, ropes: [], crevasses: [], seracGrid: new Map(), labels: [] };
+  const campVisuals = world.campVisuals = new CampVisuals(scene, field, { quality, anisotropy });
   const box = new THREE.BoxGeometry(1, 1, 1);
 
   // ---------------- camps
-  const tents = instanced(scene, new THREE.SphereGeometry(1, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 0.7 }), 160);
-  const mess = instanced(scene, box, new THREE.MeshStandardMaterial({ roughness: 0.8 }), 40);
-  const bottles = instanced(scene, new THREE.CylinderGeometry(0.11, 0.11, 0.62, 10), new THREE.MeshStandardMaterial({ color: 0xe8661a, roughness: 0.4, metalness: 0.3 }), 120);
   const TENT = [0xf5b301, 0xf07d12, 0xe03a26, 0xf5d000, 0x2a8de0, 0x3db35a, 0xf5b301, 0xf07d12];
   for (const c of camps) {
     const route = routes[c.route], ny = H(c.x, c.z), dir = route.at(c.s);
@@ -72,26 +73,31 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
       const y = H(x, z);
       if (Math.abs(y - ny) > (c.id === 'ebc' ? 12 : 3)) continue;
       const s = 1.1 + r() * 0.5;
-      add(tents, x, y - 0.05, z, r() * 6, s * 1.25, s * 0.95, s, TENT[Math.floor(r() * TENT.length)]);
+      campVisuals.add('sleep', { x, y, z, rot: r() * 6, scale: [s * 1.25 / 1.28, s * 0.95 / 1.17, s / 1.02],
+        color: TENT[Math.floor(r() * TENT.length)], id: `${c.id}-sleep-${placed}` });
       placed++;
     }
     const ox = c.x - dir.dz * 5, oz = c.z + dir.dx * 5;
     const nb = c.id === 'ebc' ? 12 : Math.max(2, Math.min(8, c.stock + 2));
-    for (let k = 0; k < nb; k++) { const bx = ox + (k % 4) * 0.25, bz = oz + Math.floor(k / 4) * 0.25; add(bottles, bx, H(bx, bz) + 0.31, bz); }
+    for (let k = 0; k < nb; k++) { const x = ox + (k % 4) * 0.25, z = oz + Math.floor(k / 4) * 0.25;
+      campVisuals.add('bottle', { x, z, color: 0xe8661a, id: `${c.id}-bottle-${k}` }); }
     if (c.id === 'ebc') {
       for (let k = 0; k < 10; k++) {
         const a = r() * Math.PI * 2, d = 20 + r() * 45, x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
         if (field.distanceToTrack(x, z) < 8) continue;
-        add(mess, x, H(x, z) + 1.2, z, r() * 3, 7, 2.4, 4, [0x3a6fb5, 0xd8d2c0, 0x5b8a3c, 0xc9a227][k % 4]);
+        campVisuals.add('mess', { x, z, rot: r() * 3, scale: [7 / 8, 2.4 / 2.9, 4 / 4.2],
+          color: [0x3a6fb5, 0xd8d2c0, 0x5b8a3c, 0xc9a227][k % 4], id: `hub-mess-${k}` });
       }
       const chx = c.x - 26, chz = c.z + 20, chy = H(chx, chz);
-      add(mess, chx, chy + 0.6, chz, 0.3, 2.4, 1.2, 2.4, 0xb8b0a5);
-      add(mess, chx, chy + 1.5, chz, 0.3, 1.5, 0.6, 1.5, 0xe8e2d5);
+      campVisuals.add('altar', { x: chx, y: chy, z: chz, rot: 0.3, scale: [1.5, 1, 1.5], color: 0xb8b0a5, id: 'hub-altar' });
       prayerFlags(scene, field, chx, chy + 2, chz, 8, 28, 8, r);
     }
     if (c.id === 'c4') {
       // the South Col is littered with spent bottles and torn tents
-      for (let k = 0; k < 25; k++) { const x = c.x + (r() - 0.5) * 70, z = c.z + (r() - 0.5) * 70; add(bottles, x, H(x, z) + 0.08, z, r() * 6, 1, 1, 1, null, _q.setFromEuler(new THREE.Euler(Math.PI / 2, r() * 6, 0))); }
+      for (let k = 0; k < 25; k++) { const x = c.x + (r() - 0.5) * 70, z = c.z + (r() - 0.5) * 70;
+        campVisuals.add('bottle', { x, y: H(x, z) + 0.108, z, rot: r() * 6, color: 0xe8661a,
+          quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, r() * 6, 0)),
+          originOffset: [0, -0.31, 0], ground: false, id: `c4-spent-${k}` }); }
     }
     c.label = makeLabel(scene, c.short === 'EBC' ? 'Base Camp' : c.name.split(' · ')[0], fmt(ny) + ' m');
     c.label.position.set(c.x, ny + 30, c.z);
@@ -127,7 +133,6 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
       const y = H(x, z);
       add(poles, x, y + 0.7, z); add(flags, x, y + 1.32, z, r() * 6, 1, 1, 1, col);
     }
-    bootTrack(scene, field, route);
   }
 
   // ---------------- fixed ropes
@@ -162,13 +167,12 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
     for (const o of world.crevasses) if (Math.hypot(o.x - x, o.z - z) < (o.len + cv.len) / 2 + 5) ok = false;
     if (ok) world.crevasses.push(cv);
   }
-  const lipMat = new THREE.MeshStandardMaterial({ color: 0xa8d8f2, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const holeMat = new THREE.MeshBasicMaterial({ color: 0x041018, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  world.crevasseField = new CrevasseField(field, world.crevasses, seed);
+  world.crevasseVisuals = new CrevasseVisuals(scene, world.crevasseField, quality);
   for (const cv of world.crevasses) {
-    scene.add(ribbon(field, cv, cv.w + 1.8, 0.1, lipMat));
-    scene.add(ribbon(field, cv, cv.w, 0.18, holeMat));
     if (cv.ladder) ladder(field, cv, rungs);
   }
+  for(const c of CLIMBS)bootTrack(scene, field, routes[c.route], world.crevasseField);
 
   // ---------------- seracs
   const sg = new THREE.IcosahedronGeometry(1, 1), n2 = makeNoise2D(mulberry32(seed + 77)), sp = sg.attributes.position;
@@ -206,9 +210,10 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
     add(rocks, x, H(x, z) + 0.5, z, r() * 6, 1.4 + r() * 1.4, 1.5 + r() * 2.5, 1.2 + r());
   }
 
-  finish(tents, mess, bottles, poles, flags, rungs, seracs, rocks);
+  finish(poles, flags, rungs, seracs, rocks);
   world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
   if (basePlan) world.baseCamp = buildBaseCamp(scene, field, routes, basePlan, world, prayerFlags, makeLabel);
+  campVisuals.finish();
   return world;
 }
 
@@ -224,7 +229,7 @@ function peakTop(core, backdrop, pk) {
   return best;
 }
 
-function bootTrack(scene, field, route) {
+function bootTrack(scene, field, route, holes) {
   const pos = [], idx = []; let k = 0;
   for (let s = 0; s <= route.L; s += 3) {
     const p = route.at(s);
@@ -233,7 +238,9 @@ function bootTrack(scene, field, route) {
     k++;
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const cut=[];
+  for(let i=0;i<idx.length;i+=3)for(const p of holes.cutTriangle(idx.slice(i,i+3).map(k=>pos.slice(k*3,k*3+3))))cut.push(...p);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(cut, 3)); g.computeVertexNormals();
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x7f8b98, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
   mesh.renderOrder = 1; scene.add(mesh);
 }
@@ -253,33 +260,8 @@ function rope(scene, field, d) {
   return { name: d.name, pts, color: d.color, route: d.route };
 }
 
-function ribbon(field, cv, width, lift, mat) {
-  const pos = [], idx = [], steps = Math.ceil(cv.len / 2), vx = -cv.uz, vz = cv.ux;
-  for (let k = 0; k <= steps; k++) {
-    const u = (k / steps - 0.5) * cv.len, taper = 1 - Math.pow(Math.abs(k / steps - 0.5) * 2, 3) * 0.85;
-    for (const sg of [-1, 1]) {
-      const x = cv.x + cv.ux * u + vx * sg * width / 2 * taper, z = cv.z + cv.uz * u + vz * sg * width / 2 * taper;
-      pos.push(x, field.height(x, z) + lift, z);
-    }
-    if (k < steps) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2, a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, mat); mesh.receiveShadow = true; return mesh;
-}
-
 function ladder(field, cv, rungs) {
-  const vx = -cv.uz, vz = cv.ux, ext = cv.w / 2 + 1.3;
-  const A = new THREE.Vector3(cv.x - vx * ext, 0, cv.z - vz * ext); A.y = field.height(A.x, A.z) + 0.14;
-  const B = new THREE.Vector3(cv.x + vx * ext, 0, cv.z + vz * ext); B.y = field.height(B.x, B.z) + 0.14;
-  const dir = B.clone().sub(A), len = dir.length(); dir.normalize();
-  const side = new THREE.Vector3(cv.ux, 0, cv.uz);
-  const up = new THREE.Vector3().crossVectors(side, dir).normalize(); if (up.y < 0) up.negate();
-  const sideN = new THREE.Vector3().crossVectors(dir, up).normalize();
-  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, up, sideN));
-  for (const o of [-0.3, 0.3]) { const c = A.clone().add(B).multiplyScalar(0.5).addScaledVector(sideN, o); add(rungs, c.x, c.y, c.z, 0, len, 0.07, 0.05, null, q); }
-  for (let t = 0.15; t < len; t += 0.32) { const c = A.clone().addScaledVector(dir, t); add(rungs, c.x, c.y + 0.01, c.z, 0, 0.04, 0.04, 0.62, null, q); }
-  cv.ladderA = A; cv.ladderB = B;
+  for(const part of cv.ladderParts) add(rungs, part.center.x, part.center.y, part.center.z, 0, ...part.half.map(v=>v*2), null, part.rotation);
 }
 
 // The dead of the route (see memorials.js): a cairn with prayer flags, or a shrouded figure off the trail where the

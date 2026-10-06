@@ -22,6 +22,7 @@ import { CameraRig } from './render/camera.js';
 import { game, newGame, restHours, placePlayer, setSpeedMul, die, refreshConditions } from './sim/game.js';
 import { PhysicsScene, initPhysics } from './sim/physics.js';
 import { AvalancheView } from './render/avalanche.js';
+import { querySupport } from './sim/surface.js';
 import { toggleSkis } from './sim/ski.js';
 import { simStep } from './sim/step.js';
 import { stepPhysiology } from './sim/physiology.js';
@@ -86,10 +87,10 @@ async function boot() {
     layers, macroNoise: createMacroNoiseTexture(), relief: relief.texture, reliefRect: relief.rect,
     microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512, exactGradients: quality.exactGradients,
   });
-  terrain = new TerrainLOD(scene, terrainMat, field, coreTerrainOptions());
-  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Fixing ropes, ladders and camps…');
-  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan });
+  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy() });
+  terrain = new TerrainLOD(scene, terrainMat, field, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
+  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Preparing fall and snow physics…');
   await initPhysics();
   game.physics = new PhysicsScene(game, { die });
@@ -104,6 +105,8 @@ async function boot() {
   initInput({ onDebugKey: DEBUG ? debugKey : null });
   await step('Pitching tents at Base Camp…');
   rig.update(0, 0, game, climber);
+  game.world.campVisuals.update(camera);
+  game.world.crevasseVisuals.update(camera);
   for (let k = 0; k < 60 && terrain.update(camera.position, 40) > 0; k++);
   backdrop.update(camera.position, 40);
   showTitle();
@@ -123,6 +126,8 @@ function frame(now) {
   climber.update(dt, game.P, game.S, game.physics);
   rig.update(dt, simTime, game, climber);
   avalancheView.update(game.mode==='play'||game.mode==='dead'?dt:0, game.physics, camera);
+  game.world.campVisuals.update(camera);
+  game.world.crevasseVisuals.update(camera);
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
@@ -165,6 +170,9 @@ function setQuality(name) {
   resize();
   env.applyQuality(q);
   postfx.configure(q);
+  game.world.campVisuals.applyQuality(q);
+  game.world.crevasseVisuals.applyQuality(q);
+  game.world.campVisuals.update(camera, true);
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
   if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
@@ -184,6 +192,8 @@ const api = {
   resetPhysics: () => { const ok = game.physics.resetExperiment(); refreshConditions(); return ok; },
   stepPhysics: (dt, control) => game.physics.step(dt, control),
   get avalancheView() { return avalancheView; },
+  crevasseAt: (x,z) => game.world.crevasseField.at(x,z)?.id ?? null,
+  querySupport: (position,maxDrop) => querySupport(game,position,maxDrop),
   get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;

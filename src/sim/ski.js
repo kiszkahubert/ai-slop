@@ -1,13 +1,12 @@
 // Easter egg: strap on skis anywhere on the mountain ([X]) and ski down it. Gravity pulls you down the fall
 // line, the edges hold you along the skis, and you carve by steering toward the way you want to go.
 //   W (towards the tips) skate · A/D carve · S (back) snowplough brake · Shift tuck · X skis off
-import { clamp, fmt, wrapAngle } from '../core/math.js';
+import { clamp, wrapAngle } from '../core/math.js';
 import { toast } from '../core/events.js';
-import { crevasseLocal } from '../world/props.js';
-import { game, die, region } from './game.js';
+import { game, region } from './game.js';
 import { seracCollide, stopAutopilot } from './player.js';
 import { maxStamina } from './physiology.js';
-import { groundHeight } from './surface.js';
+import { groundHeight, querySupport, sweepSupport } from './surface.js';
 
 export const SKI = {
   g: 9.81,
@@ -17,7 +16,6 @@ export const SKI = {
   edgeHold: 4.4,                          // sideways pull the edges hold outright (m/s², ~40° traverses)
   turnRate: 1.9,                          // rad/s
   skate: 2.2, skateMax: 4,                // skating push (m/s²) up to this speed
-  jump: 9,                                // fast enough to fly over a crevasse (m/s)
   bonk: 12,                               // hitting a serac faster than this hurts (m/s)
   wobble: 33,                             // above this the skis start to chatter (m/s)
 };
@@ -43,6 +41,8 @@ export function toggleSkis() {
 /** One step on skis. ctl: { dx, dz, sprint } world-space direction the player wants, like walking. */
 export function updateSki(dt, ctl) {
   const { P, S, field } = game, K = P.ski;
+  if(K.air) {skiFlight(dt);return;}
+  P.lastSupported={x:P.x,y:P.y,z:P.z,clipped:-1};
   // steering: turn the skis toward the direction asked for; straight back means brake, straight on means skate
   K.brake = false;
   let push = false;
@@ -73,19 +73,12 @@ export function updateSki(dt, ctl) {
   let nx = P.x + vx * dt, nz = P.z + vz * dt;
   const hv = Math.hypot(vx, vz), grade = hv > 1e-3 ? (groundHeight(game,nx,nz) - groundHeight(game,P.x,P.z)) / (hv * dt) : 0;
   K.speed = hv * Math.sqrt(1 + grade * grade);
-  // crevasses: fly over them with some speed, or drop in
-  let overCv = null;
-  for (const cv of game.world.crevasses) {
-    const loc = crevasseLocal(cv, nx, nz);
-    if (!loc || Math.abs(loc.v) >= cv.w / 2 - 0.4) continue;
-    overCv = cv;
-    if (K.cv === cv || (cv.ladder && Math.abs(loc.u) < 1.3)) continue;
-    if (K.speed >= SKI.jump || game.free) { K.cv = cv; toast(`Airborne! You flew the crevasse at ${fmt(K.speed * 3.6)} km/h.`, 'good', 2.5); continue; }
-    P.x = nx; P.z = nz; P.y = field.height(nx, nz) - 20; P.ski = null;
-    die(`Skied too slowly into a crevasse in the ${region()}. Take a run-up — or use the ladders.`);
-    return;
+  const sweep=sweepSupport(game,P,{x:nx,z:nz});
+  if(!sweep.support) {
+    P.lastSupported={...sweep.last,clipped:-1};Object.assign(P,{x:sweep.x,y:sweep.y,z:sweep.z});
+    K.u=u;K.w=w;K.air={vx,vy:grade*hv,vz};
+    skiFlight(dt*(1-sweep.t));return;
   }
-  if (!overCv) K.cv = null;
   // seracs: bounce off
   const [sx, sz] = seracCollide(nx, nz);
   if (Math.hypot(sx - nx, sz - nz) > 1e-3) {
@@ -103,7 +96,7 @@ export function updateSki(dt, ctl) {
   }
   S.distance += Math.hypot(nx - P.x, nz - P.z);
   P.velocity={x:vx,y:grade*hv,z:vz};
-  P.x = nx; P.z = nz; P.y = groundHeight(game,nx,nz);
+  P.x = nx; P.z = nz; P.y = sweep.support.height;
   K.u = u; K.w = w;
   // the skis follow the slope along their length
   K.pitch = Math.atan((field.height(P.x + hx, P.z + hz) - field.height(P.x - hx, P.z - hz)) / 2);
@@ -115,6 +108,26 @@ export function updateSki(dt, ctl) {
   if (S.winded && S.stamina > 25) S.winded = false;
   // the camera swings round behind you as you pick up speed
   game.view.yaw += wrapAngle(K.h - game.view.yaw) * clamp(K.speed / 15, 0, 1) * Math.min(1, dt * 2);
+}
+
+function skiFlight(dt) {
+  const P=game.P,K=P.ski,a=K.air,holes=game.world.crevasseField;
+  const nx=P.x+a.vx*dt,nz=P.z+a.vz*dt,ny=P.y+a.vy*dt-.5*SKI.g*dt*dt;
+  a.vy-=SKI.g*dt;P.velocity={x:a.vx,y:a.vy,z:a.vz};
+  const direction={x:nx-P.x,y:ny-P.y,z:nz-P.z},length=Math.hypot(direction.x,direction.y,direction.z);
+  const hit=length>0?holes?.ray({x:P.x,y:P.y+.2,z:P.z},direction,length):null;
+  const support=querySupport(game,{x:nx,y:ny+.3,z:nz},.8);
+  const surface=holes?.at(nx,nz)?null:groundHeight(game,nx,nz);
+  Object.assign(P,{x:nx,y:ny,z:nz});P.moving=true;P.onLadder=false;
+  if(hit || (support?.kind==='cavity')) {
+    if(hit)Object.assign(P,{x:hit.point.x,y:hit.point.y-.2,z:hit.point.z});
+    game.physics.startFall({reason:'crevasse',region:region(),velocity:P.velocity});return;
+  }
+  if(surface!==null && ny<=surface+.08 && a.vy<=0) {
+    if(a.vy<-6) {game.physics.startFall({reason:'ski landing',region:region(),velocity:P.velocity});return;}
+    P.y=surface;K.air=null;P.lastSupported={x:P.x,y:P.y,z:P.z,clipped:-1};return;
+  }
+  if(ny<game.field.height(nx,nz)-.55) game.physics.startFall({reason:'crevasse',region:region(),velocity:P.velocity});
 }
 
 const cellIndex = (f, x, z) => clamp(Math.round((z - f.z0) / f.cell), 0, f.nz - 1) * f.nx + clamp(Math.round((x - f.x0) / f.cell), 0, f.nx - 1);

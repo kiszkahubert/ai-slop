@@ -2,6 +2,7 @@
 // skirts hide cracks between neighbours at different levels.
 import * as THREE from 'three';
 import { TERRAIN } from '../config.js';
+import { buildCrevasseTerrain } from './crevasseTerrain.js';
 
 export class TerrainLOD {
   /**
@@ -32,6 +33,7 @@ export class TerrainLOD {
   }
 
   buildGeometry(ch, step) {
+    if(this.o.crevasses?.nearby(ch,8).length)return buildCrevasseTerrain(this.f,ch,step,this.o.crevasses);
     const f = this.f, ni = Math.floor((ch.i1 - ch.i0) / step) + 1, nj = Math.floor((ch.j1 - ch.j0) / step) + 1;
     const nv = ni * nj + 2 * (ni + nj);
     const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), gl = new Float32Array(nv), rk = new Float32Array(nv);

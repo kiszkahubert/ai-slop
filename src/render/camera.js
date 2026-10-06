@@ -18,7 +18,8 @@ export class CameraRig {
     const yaw = view.yaw + sw * 0.05 * Math.sin(time * 0.53);
     // Lift the chase camera above the uphill slope while keeping the user's orbit.
     const sx=Math.sin(yaw),sz=Math.cos(yaw),grade=fall?game.field.slope(P.x,P.z,16):null;
-    const fallPitch=fall ? -Math.atan(Math.max(.7,grade.gx*sx+grade.gz*sz+.5)) : view.pitch;
+    const holes=game.world?.crevasseField,inCavity=!!holes?.at(P.x,P.z) && P.y<game.field.height(P.x,P.z)-.3;
+    const fallPitch=fall && !inCavity ? -Math.atan(Math.max(.7,grade.gx*sx+grade.gz*sz+.5)) : view.pitch;
     const pitch = clamp(fallPitch + sw * 0.035 * Math.sin(time * 0.71 + 1) + (P.onLadder ? 0.01 * Math.sin(time * 6) : 0), -1.45, 1.45);
     const roll = sw * 0.06 * Math.sin(time * 0.37) + (P.falling?.impact || 0)*.035;
     if (view.fp && !fall) {
@@ -37,15 +38,20 @@ export class CameraRig {
     const fx = -Math.sin(yaw) * Math.cos(pitch), fy = Math.sin(pitch), fz = -Math.cos(yaw) * Math.cos(pitch);
     const distance=fall?Math.max(9,view.dist):view.dist;
     let want = distance;
+    const wall=holes?.ray(this.target,{x:-fx,y:-fy,z:-fz},distance);
+    if(wall)want=Math.max(.05,wall.distance-.2);
     for (let k = 1; k <= 12; k++) {
       const d = (distance * k) / 12, x = this.target.x - fx * d, y = this.target.y - fy * d, z = this.target.z - fz * d;
-      if (y < groundHeight(game,x,z) + 0.5) { want = Math.max(1.2, d - distance / 12); break; }
+      if (!holes?.at(x,z) && y < groundHeight(game,x,z) + 0.5) { want = Math.min(want, Math.max(.4, d - distance / 12)); break; }
     }
     this.dist = want < this.dist ? want : lerp(this.dist, want, Math.min(1, dt * 3));
     cam.position.set(this.target.x - fx * this.dist, this.target.y - fy * this.dist, this.target.z - fz * this.dist);
     const gh = groundHeight(game,cam.position.x,cam.position.z) + 0.4;
-    if (cam.position.y < gh) cam.position.y = gh;
+    if (!holes?.at(cam.position.x,cam.position.z) && cam.position.y < gh) cam.position.y = gh;
     cam.lookAt(this.target);
     cam.rotateZ(roll);
+    // When a wall leaves the camera inside the clothing, hide the visual body
+    // until orbiting creates space. Physics and the headlamp remain active.
+    if(fall && this.dist<.45)climber.group.visible=false;
   }
 }

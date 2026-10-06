@@ -162,18 +162,12 @@ function iceTowerGeometry(seed) {
 /** Everything that stands at Base Camp and on the way to Crampon Point. */
 export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, makeLabel) {
   const r = mulberry32(plan.seed + 7), H = (x, z) => field.height(x, z);
+  const campVisuals = world.campVisuals;
   const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, ...o });
-  const tents = inst(scene, new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0xffffff, { roughness: 0.6 }), 2000);
-  const domes = inst(scene, new THREE.IcosahedronGeometry(1, 2), M(0xffffff, { roughness: 0.55 }), 60);
-  const boxes = inst(scene, new THREE.BoxGeometry(1, 1, 1), M(0xffffff, { roughness: 0.75 }), 400);
-  const roofGeo = new THREE.CylinderGeometry(1, 1, 1, 3, 1); roofGeo.rotateZ(Math.PI / 2);
-  const roofs = inst(scene, roofGeo, M(0xffffff, { roughness: 0.7 }), 80);
-  const stones = inst(scene, new THREE.DodecahedronGeometry(1, 0), M(0xffffff, { roughness: 0.95 }), 4600);
-  const barrels = inst(scene, new THREE.CylinderGeometry(0.3, 0.3, 0.9, 12), M(0x1f5fb8, { roughness: 0.5 }), 260);
-  const panels = inst(scene, new THREE.BoxGeometry(1.6, 0.04, 1), M(0x1b2a4a, { roughness: 0.25, metalness: 0.5 }), 140);
-  const tarps = inst(scene, new THREE.PlaneGeometry(1, 1), M(0x2f6fd0, { roughness: 0.8, side: THREE.DoubleSide }), 60);
-  const whitewash = M(0xe9e4d8, { roughness: 0.9 });
-  const chortens = inst(scene, new THREE.BoxGeometry(1, 1, 1), whitewash, 200);
+  const stoneGeo = new THREE.DodecahedronGeometry(1, 0), chalkGeo = new THREE.BoxGeometry(1, 1, 1);
+  for (const geo of [stoneGeo, chalkGeo]) geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3));
+  const stones = inst(scene, stoneGeo, campVisuals.materials.stone, 4600);
+  const chortens = inst(scene, chalkGeo, campVisuals.materials.whiteStone, 200);
   const ice = new THREE.MeshStandardMaterial({ color: 0xe4f1fb, roughness: 0.32, metalness: 0, emissive: 0x0b2135, emissiveIntensity: 0.25 });
   const towerGeos = [iceTowerGeometry(1), iceTowerGeometry(2), iceTowerGeometry(3)];
   const towers = towerGeos.map((g) => inst(scene, g, ice, 90));
@@ -181,15 +175,15 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
   const ROCK = [0x6b6560, 0x7d766d, 0x5a5550, 0x8b847a];
 
   // ---- expedition compounds
-  for (const c of plan.compounds) {
+  for (const [ci, c] of plan.compounds.entries()) {
     const y = H(c.x, c.z), [main, alt, accent] = c.scheme;
     const at = (u, v) => { const ca = Math.cos(c.rot), sa = Math.sin(c.rot); return [c.x + u * ca - v * sa, c.z + u * sa + v * ca]; };
     // dining tent: a big dome or a long mess tent with a ridge roof
-    if (c.big) { const [x, z] = at(0, 0); put(domes, x, y - 0.6, z, r() * 3, 3.6, 2.8, 3.6, r() < 0.5 ? 0xf5d000 : 0xe9e9e4); }
+    if (c.big) { const [x, z] = at(0, 0); campVisuals.add('dome', { x, y, z, rot: r() * 3, color: r() < 0.5 ? 0xf5d000 : 0xe9e9e4, id: `base-dome-${ci}` }); }
     else {
       const [x, z] = at(0, 0);
-      put(boxes, x, y + 1.0, z, c.rot, 8, 2.0, 4.2, r() < 0.5 ? 0x2a6fb8 : 0xd8d2c0);
-      put(roofs, x, y + 2.35, z, c.rot, 4.2, 8.2, 1.25, r() < 0.5 ? 0x2a6fb8 : 0xd8d2c0);
+      const color = r() < 0.5 ? 0x2a6fb8 : 0xd8d2c0, accent = r() < 0.5 ? 0x2a6fb8 : 0xd8d2c0;
+      campVisuals.add('mess', { x, y, z, rot: c.rot, color, accent, id: `base-mess-${ci}` });
     }
     // kitchen: a dry-stone wall under a blue tarp
     { const [x, z] = at(-c.r * 0.45, c.r * 0.35);
@@ -200,24 +194,23 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
         put(stones, wx, y + 0.35, wz, r() * 6, 0.55, 0.45, 0.5, ROCK[k % 4]);
         put(stones, wx, y + 0.85, wz, r() * 6, 0.45, 0.35, 0.45, ROCK[(k + 1) % 4]);
       }
-      put(tarps, x, y + 1.55, z, c.rot, 6.2, 4.6, 1, null, -Math.PI / 2 + 0.12);
+      campVisuals.add('kitchen', { x, y, z, rot: c.rot, color: 0x2f6fd0, id: `base-kitchen-${ci}` });
     }
     // sleeping tents in an arc around the compound
     const n = 10 + Math.floor(r() * 9);
     for (let k = 0; k < n; k++) {
       const a = Math.PI * 0.15 + (k / n) * Math.PI * 1.55 + (r() - 0.5) * 0.15, rr = c.r * (0.62 + r() * 0.3);
       const [x, z] = at(Math.cos(a) * rr, Math.sin(a) * rr), ty = H(x, z), col = k % 4 === 3 ? alt : main, ry = -a + c.rot;
-      put(tents, x, ty - 0.05, z, ry, 1.35, 1.05, 1.05, col);
-      put(tents, x + Math.cos(ry) * 1.15, ty - 0.05, z - Math.sin(ry) * 1.15, ry, 0.7, 0.72, 0.8, accent);   // vestibule
+      campVisuals.add('sleep', { x, y: ty, z, rot: ry, color: col, accent, id: `base-sleep-${ci}-${k}` });
       put(stones, x, ty - 0.15, z, ry, 1.6, 0.18, 1.3, ROCK[k % 4]);               // stone platform
     }
     // toilet tents, solar panels, barrels
-    for (let k = 0; k < 2; k++) { const [x, z] = at(c.r * 0.85, -c.r * 0.3 + k * 1.4); put(boxes, x, H(x, z) + 1.0, z, c.rot, 1.1, 2.0, 1.1, k ? 0x3db35a : 0x2a8de0); }
-    for (let k = 0; k < 3; k++) { const [x, z] = at(c.r * 0.2 + k * 1.8, -c.r * 0.55); put(panels, x, H(x, z) + 0.7, z, c.rot + Math.PI, 1, 1, 1, null, 0.6); }
-    for (let k = 0; k < 5; k++) { const [x, z] = at(-c.r * 0.15 + (k % 3) * 0.65, c.r * 0.6 + Math.floor(k / 3) * 0.65); put(barrels, x, H(x, z) + 0.45, z); }
+    for (let k = 0; k < 2; k++) { const [x, z] = at(c.r * 0.85, -c.r * 0.3 + k * 1.4); campVisuals.add('toilet', { x, z, rot: c.rot, color: k ? 0x3db35a : 0x2a8de0, id: `base-toilet-${ci}-${k}` }); }
+    for (let k = 0; k < 3; k++) { const [x, z] = at(c.r * 0.2 + k * 1.8, -c.r * 0.55); campVisuals.add('solar', { x, z, rot: c.rot + Math.PI, id: `base-solar-${ci}-${k}` }); }
+    for (let k = 0; k < 5; k++) { const [x, z] = at(-c.r * 0.15 + (k % 3) * 0.65, c.r * 0.6 + Math.floor(k / 3) * 0.65); campVisuals.add('barrel', { x, z, color: 0x1f5fb8, id: `base-barrel-${ci}-${k}` }); }
     // puja altar (lhap-so): a whitewashed stone chorten with a flag pole and prayer flags to the tents
     { const [x, z] = at(c.r * 0.3, c.r * 0.15), py = H(x, z);
-      put(chortens, x, py + 0.45, z, c.rot, 1.6, 0.9, 1.6); put(chortens, x, py + 1.15, z, c.rot, 1.1, 0.5, 1.1); put(chortens, x, py + 1.6, z, c.rot + 0.78, 0.6, 0.4, 0.6);
+      campVisuals.add('altar', { x, y: py, z, rot: c.rot, color: 0xe9e4d8, id: `base-altar-${ci}` });
       prayerFlags(scene, field, x, py + 1.8, z, 5, c.r * 0.9, 5.5, r);
     }
   }
@@ -294,9 +287,9 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
   }
   // ---- Crampon Point: a tarp shelter, gear, a sign
   { const c = plan.crampon, y = H(c.x, c.z), ry = Math.atan2(c.dx, c.dz);
-    put(tarps, c.x, y + 1.6, c.z, ry, 4.5, 3.2, 1, null, -Math.PI / 2 + 0.3);
-    for (let k = 0; k < 4; k++) put(barrels, c.x + (k - 1.5) * 0.7, y + 0.45, c.z + 1.6, 0, 1, 1, 1);
-    for (let k = 0; k < 6; k++) put(boxes, c.x - 1.5 + (k % 3) * 0.75, y + 0.2 + Math.floor(k / 3) * 0.4, c.z - 1.4, ry, 0.6, 0.38, 0.4, k % 2 ? 0x2a2f38 : 0xe8661a);
+    campVisuals.add('tarp', { x: c.x, y, z: c.z, rot: ry, scale: [4.5 / 6.2, 0.9, 3.2 / 4.6], color: 0x2f6fd0, id: 'crampon-tarp' });
+    for (let k = 0; k < 4; k++) campVisuals.add('barrel', { x: c.x + (k - 1.5) * 0.7, y, z: c.z + 1.6, color: 0x1f5fb8, id: `crampon-barrel-${k}` });
+    for (let k = 0; k < 6; k++) campVisuals.add('crate', { x: c.x - 1.5 + (k % 3) * 0.75, y: y + Math.floor(k / 3) * 0.4, z: c.z - 1.4, rot: ry, color: k % 2 ? 0x2a2f38 : 0xe8661a, id: `crampon-crate-${k}` });
     const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshStandardMaterial({
       map: signTexture([['CRAMPON POINT', 54, '#ffffff'], ['Khumbu Icefall ▲', 40, '#ffd166']], { bg: '#24456f' }), roughness: 0.8, side: THREE.DoubleSide,
     }));
@@ -304,6 +297,6 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.9, 6), M(0x5a4632)); post.position.set(c.x + 2.6, y + 0.95, c.z); scene.add(post);
     const l = makeLabel(scene, 'Crampon Point', fmt(y) + ' m'); l.position.set(c.x, y + 9, c.z); l.userData.range = 900; world.labels.push(l);
   }
-  done(tents, domes, boxes, roofs, stones, barrels, panels, tarps, chortens, ...towers);
+  done(stones, chortens, ...towers);
   return { towers: placed.length, compounds: plan.compounds.length };
 }

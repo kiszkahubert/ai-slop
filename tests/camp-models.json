@@ -1,0 +1,1 @@
+[{"script":"tests/camp-models.js","expect":"r.objects > 1500 && r.kinds.length === 11 && Object.values(r.camps).every(n => n > 0) && r.released === 15 && r.stateKept && r.placementsKept && r.near === 1 && r.far === 0 && r.anchorsGrounded && r.macroPatched && r.textured && r.stableResources && r.resources.every(s => s.textures === 15)"}]

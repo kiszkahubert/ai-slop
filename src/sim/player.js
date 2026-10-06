@@ -3,12 +3,11 @@
 import { MOVE, SLIP_ANGLE } from '../config.js';
 import { clamp, smoothstep, D2R, wrapAngle } from '../core/math.js';
 import { emit, toast } from '../core/events.js';
-import { crevasseLocal } from '../world/props.js';
 import { SegmentIndex } from '../core/spatial.js';
-import { game, die, nearCamp, region, speedFactor } from './game.js';
+import { game, nearCamp, region, speedFactor } from './game.js';
 import { hypF, maxStamina, packLoad } from './physiology.js';
 import { CLIMBS } from '../world/route.js';
-import { groundHeight } from './surface.js';
+import { groundHeight, querySupport, sweepSupport } from './surface.js';
 
 // ---------------- fixed ropes
 let ropeIndex = null, ropeIndexFor = null;
@@ -138,7 +137,24 @@ function autopilotControl() {
     }
   }
   if (A.resting) return { dx: 0, dz: 0, sprint: false };
-  const t = R.at(s + A.dir * 7);
+  let t = R.at(s + A.dir * 7);
+  const holes=game.world.crevasseField;
+  if(holes && R===routes.main) {
+    A.crossed ??= new Set();
+    if(!A.crossing) {
+      const cv=holes.records.find(cv=>cv.ladder && !A.crossed.has(cv.id) && Math.hypot(cv.x-P.x,cv.z-P.z)<9);
+      if(cv) {const loc=holes.local(cv,P.x,P.z);A.crossing={id:cv.id,entry:loc.v<0?-1:1,phase:0};}
+    }
+    if(A.crossing) {
+      const c=A.crossing,cv=holes.records.find(v=>v.id===c.id),ext=cv.w/2+2.2;
+      const waypoint=(side)=>({x:cv.x-cv.uz*ext*side,z:cv.z+cv.ux*ext*side});
+      t=waypoint(c.phase? -c.entry:c.entry);
+      if(Math.hypot(t.x-P.x,t.z-P.z)<.3) {
+        if(!c.phase){c.phase=1;t=waypoint(-c.entry);}
+        else {A.crossed.add(cv.id);A.crossing=null;t=R.at(s+A.dir*7);}
+      }
+    }
+  }
   let dx = t.x - P.x, dz = t.z - P.z; const l = Math.hypot(dx, dz) || 1;
   dx /= l; dz /= l;
   view.yaw += wrapAngle(Math.atan2(-dx, -dz) - view.yaw) * 0.04;
@@ -152,9 +168,24 @@ export function updatePlayer(dt, ctl) {
   if (P.falling || P.recovery) return;
   if (game.auto) ctl = autopilotControl() || { dx: 0, dz: 0 };   // manual input cancels it (see step.js)
   let dx = ctl ? ctl.dx : 0, dz = ctl ? ctl.dz : 0;
-  P.moving = !!(dx || dz); P.sprint = false; P.grade = 0; P.onLadder = false;
+  const current=querySupport(game,P,.6);
+  if(!current || current.kind==='cavity') {game.physics?.startFall({reason:'crevasse',region:region(),velocity:P.velocity});return;}
+  P.lastSupported={x:P.x,y:current.height,z:P.z,clipped:P.clipped};
+  let crossing=null;
+  for(const cv of game.world.crevasseField?.nearby({x0:P.x-4,x1:P.x+4,z0:P.z-4,z1:P.z+4})||[]) {
+    if(!cv.ladder)continue;const {u,v}=game.world.crevasseField.local(cv,P.x,P.z);
+    if(Math.abs(u)>.85 || Math.abs(v)>cv.w/2+2.3)continue;
+    crossing=cv;
+    const along=-dx*cv.uz+dz*cv.ux,lateral=dx*cv.ux+dz*cv.uz;
+    if(Math.abs(along)>.75 && Math.abs(lateral)<.55) {
+      const correction=clamp(-u*3,-.65,.65);dx=-cv.uz*along+cv.ux*correction;dz=cv.ux*along+cv.uz*correction;
+      const l=Math.hypot(dx,dz);if(l>1){dx/=l;dz/=l;}
+    }
+    break;
+  }
+  P.moving = !!(dx || dz); P.sprint = false; P.grade = 0; P.onLadder = current.kind==='ladder';
   if (P.moving) {
-    const sprint = !!ctl.sprint && S.stamina > 4 && !S.winded;
+    const sprint = !!ctl.sprint && S.stamina > 4 && !S.winded && !crossing;
     const h0 = groundHeight(game,P.x,P.z), grade = (groundHeight(game,P.x + dx * 1.5,P.z + dz * 1.5) - h0) / 1.5;
     P.grade = grade;
     const slopeF = grade > 0 ? 1 / (1 + MOVE.uphill * grade) : 1 / (1 + MOVE.downhill * -grade);
@@ -164,26 +195,11 @@ export function updatePlayer(dt, ctl) {
     const head = Math.max(0, -(dx * -Math.sin(wdir) + dz * Math.cos(wdir)));
     const windF = 1 - clamp((game.env.wind - 35) / 160, 0, 0.35) * head;
     const stamF = S.stamina < 8 && grade > 0.2 ? 0.55 : 1;
-    const v3 = (sprint ? MOVE.sprint : MOVE.walk) * slopeF * hypF(S) * weightF * exhF * frostF * windF * stamF;
+    const v3 = (sprint ? MOVE.sprint : MOVE.walk) * slopeF * hypF(S) * weightF * exhF * frostF * windF * stamF * (crossing ? .45 : 1);
     const mul = speedFactor();          // debug walk speed
     P.sprint = sprint;
     const vh = (v3 * mul) / Math.sqrt(1 + grade * grade);
     let nx = P.x + dx * vh * dt, nz = P.z + dz * vh * dt;
-    // crevasses: cross on the ladder or fall in
-    for (const cv of game.world.crevasses) {
-      const loc = crevasseLocal(cv, nx, nz); if (!loc) continue;
-      if (cv.ladder && Math.abs(loc.u) < 1.3) { P.onLadder = true; continue; }
-      if (cv.ladder && Math.abs(loc.u) < 2.2) {
-        nx -= cv.ux * Math.sign(loc.u) * (Math.abs(loc.u) - 1.2); nz -= cv.uz * Math.sign(loc.u) * (Math.abs(loc.u) - 1.2);
-        P.onLadder = true; continue;
-      }
-      if (Math.abs(loc.v) < cv.w / 2 - 0.4 && !game.free) {
-        P.x = nx; P.z = nz; P.y = field.height(nx, nz) - 20;
-        die(`Fell into a crevasse in the ${region()}. Always cross on the ladders.`);
-        return;
-      }
-    }
-    if (P.onLadder) { nx = P.x + (nx - P.x) * 0.45; nz = P.z + (nz - P.z) * 0.45; }
     const hn = groundHeight(game,nx,nz), stepGrade = (hn - h0) / Math.max(0.01, Math.hypot(nx - P.x, nz - P.z));
     if (stepGrade > MOVE.maxGrade && P.clipped < 0 && !game.free) { emit('prompt', 'Too steep to climb here — find the route or a fixed rope', 1.2); nx = P.x; nz = P.z; }
     [nx, nz] = seracCollide(nx, nz);
@@ -198,8 +214,16 @@ export function updatePlayer(dt, ctl) {
       }
     }
     nx = clamp(nx, field.x0 + 100, field.x1 - 100); nz = clamp(nz, field.z0 + 100, field.z1 - 100);
+    const sweep=sweepSupport(game,P,{x:nx,z:nz});
+    if(!sweep.support) {
+      P.lastSupported={...sweep.last,clipped:P.clipped};
+      const velocity={x:(nx-P.x)/dt,y:grade*vh,z:(nz-P.z)/dt};
+      Object.assign(P,{x:sweep.x,y:sweep.y,z:sweep.z});
+      game.physics?.startFall({reason:'crevasse',region:region(),velocity});return;
+    }
+    P.onLadder=sweep.support.kind==='ladder';
     S.distance += Math.hypot(nx - P.x, nz - P.z);
-    P.velocity={x:(nx-P.x)/dt,y:(hn-h0)/dt,z:(nz-P.z)/dt};
+    P.velocity={x:(nx-P.x)/dt,y:(sweep.support.height-current.height)/dt,z:(nz-P.z)/dt};
     P.x = nx; P.z = nz;
     P.facing = Math.atan2(-dx, -dz);
     P.phase += dt * v3 * 1.9;
@@ -226,7 +250,7 @@ export function updatePlayer(dt, ctl) {
   if (S.stamina <= 0) { S.stamina = 0; if (!S.winded) toast('Out of breath — stop and recover.', 'warn'); S.winded = true; }
   if (S.winded && S.stamina > 25) S.winded = false;
   S.stamina = clamp(S.stamina, 0, maxStamina(S));
-  if(!P.falling) P.y = groundHeight(game,P.x,P.z);
+  if(!P.falling) P.y = game.world.crevasseField?.ladderSupport(P.x,P.z)?.height ?? groundHeight(game,P.x,P.z);
 }
 
 // ---------------- falls

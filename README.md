@@ -68,7 +68,7 @@ a fresh expedition from that spot, acclimatized as after the usual rotations (up
 Press **X** anywhere to strap on skis and ski down the mountain. Gravity pulls you down the fall line and your edges
 hold you along the skis. Steer toward the way you want to go: **W** skates, **A**/**D** carve, **S** snowploughs to a
 stop and **Shift** tucks. Press **X** again to take them off once you have slowed down. On a real expedition the
-mountain still bites: take a crevasse too slowly and you drop in, hit a serac fast and it hurts, and above ~120 km/h
+mountain still bites: crevasse crossings follow airborne motion and landing contacts, hit a serac fast and it hurts, and above ~120 km/h
 your skis may chatter loose. Skis are off-limits for fixed ropes and the route-following autopilot.
 
 Press **B** to release a small slab on a suitable snow slope roughly 150 m uphill. The Lhotse Face near Camp 3
@@ -83,7 +83,29 @@ The **T** panel includes buttons for these experiments.
 Slips and ski crashes transfer the climber's momentum to an eleven-part articulated body. Contacts with the native
 terrain and nearby seracs cause sliding, rolling and impacts; conscious climbers brace, while fatal impacts leave a
 limp body that continues moving until it settles. The camera temporarily pulls back during a fall and restores your
-chosen view after recovery. Crevasses retain their separate fatal crossing rule.
+chosen view after recovery. Walking off a crevasse edge transfers the current position and velocity into the same
+gravity-driven simulation. Ice walls, ledges, closed floors, ladder rails and rungs have physical collisions.
+
+Crevasse locations, lengths, widths and orientations retain their original seeded placements. The openings taper
+and have restrained irregular edges. Their **12–35 m depths and occasional 2–6 m ledges are procedural**, not
+measurements from the Pléiades DEM. Terrain triangles and boot tracks are cut around the openings; the original
+elevation assets remain unchanged. Native-resolution collars preserve the holes at every terrain LOD.
+
+Ladders provide approximately **0.6 m** of actual support. Walking along them is slower, with mild centring
+assistance and no sprint; deliberate lateral movement can step off. Autopilot uses bank approach and exit waypoints
+in both directions. Skis remain attached during a successful airborne crossing and come off when a tumble starts.
+SPACE only brakes against reachable solid material; it cannot catch empty air inside a shaft.
+
+Survivors who settle below the rim remain **Trapped**; an existing fixed-rope catch leaves them **Suspended**.
+Their physical pose and normal expedition physiology persist. Neither state automatically rescues or kills them.
+Saving, camp interactions and autopilot are unavailable until they reach supported ground; loading the last save
+remains available from Escape. Snow bridges, climbing out, new rope elasticity and rescue mechanics are deferred.
+Avalanche snow intercepted by an opening is counted as conservative outflow (`escaped`), rather than shaft fill.
+
+Free viewing permits invulnerable physical drops. **Shift+B** returns to the last supported position and clears
+the experiment; teleport clears an active fall or ski flight. Return to supported ground before leaving free viewing.
+The v2 save format remains unchanged: transient fall states are excluded, and unsupported legacy save or teleport
+coordinates are moved to a safe bank. Ladder positions remain valid.
 
 The detailed climber retains its down suit, helmet, axe and oxygen equipment. A pose adapter maps the simulated
 segment centres to its joint pivots, keeping equipment attached and the visible axe pick aligned with self-arrest.
@@ -148,6 +170,22 @@ dome or mess tent, a stone-walled kitchen under a tarp, a puja altar (lhap-so) s
 solar panels and fuel barrels. At the trekkers' end (toward Gorak Shep) stands the painted "Everest Base Camp 5364m"
 boulder, buried in prayer flags, with a helipad nearby. Compound sites are chosen from the terrain itself: gentle
 glacier ground at base-camp altitude, away from the route.
+
+The camps use shared, metre-scale expedition models: shaped sleeping-tent flys with crossing poles, clips, stitched
+panels, zipped doors, vestibules and ground skirts; framed geodesic dining shelters and windowed ridge-roof mess
+tents; supported tarp kitchens and toilet shelters. Equipment includes hooped drums with sealed lids, oxygen
+cylinders with valves and gauges, latched cases, and framed solar-cell panels with stands and cables. Guy lines
+are pegged to the actual ground. Shared fabric, paint, plastic, stone and solar textures are generated locally
+with color, normal and roughness maps, without additional downloads. These are exterior visual models; camp
+interactions, terrain, collision rules and saves are unchanged.
+
+Camp detail follows **Low / Medium / High**: fabric textures are 256 / 512 / 1024 px (smaller equipment maps are
+capped at 256–512 px), with fine geometry appearing within about 40 / 80 / 120 m of the camera. Simpler textured
+models remain in the distance; a transition margin prevents repeated detail changes at the boundary. Repeated
+parts share geometry and materials and are instanced in spatial batches. Quality changes release replaced maps.
+For matching camp views and draw-call/triangle comparisons, run `node tools/capture-camps.mjs before medium`
+before changes and `node tools/capture-camps.mjs after medium` afterward. Outputs go to `tests/out/`;
+`CHROMIUM` can select a browser executable. CPU submission timings are diagnostic, not a hardware FPS benchmark.
 
 **The walk to the Icefall** crosses debris-covered glacier: hummocks, troughs and melt ponds (added to the glacier
 surface, which the elevation data shows too smooth here) and clusters of white ice towers that are solid like the
@@ -351,7 +389,7 @@ offline. Software (SwiftShader) rendering makes screenshots slow, so each one ma
 The expedition tests climb the whole route with the game's own autopilot, camp rests and oxygen management, and
 must end with a win. The hazard tests check three things:
 - **Death zone:** without oxygen at 8,400 m you die (about 5–6 game hours), while 3 L/min keeps you alive.
-- **Crevasses:** stepping into one kills you, and the ladder crossing works.
+- **Crevasses:** stepping into one starts a physical fall; impacts determine the outcome, and ladder crossings work.
 - **Ropes:** unclipped climbers slip on the Lhotse Face, and clipped ones don't.
 
 Add `?debug` to the URL for test keys: `T`/`G` teleport between waypoints, `K` advances one hour, and `,`/`.`
@@ -359,6 +397,10 @@ lower/raise the walk speed (×0.25–×32). `window.__sim`
 exposes a small API.
 `triggerAvalanche({seed, source})`, `forceFall({velocity, heightOffset})`, `stepPhysics(dt, {arrest})` and
 `resetPhysics()` support reproducible physics experiments. `VIDEO=1` records an e2e suite under `tests/out/`.
+`crevasseAt(x,z)` returns a stable crevasse ID; `querySupport(position,maxDrop)` returns the actual surface height,
+normal and kind, or null for air. `game.P.falling` exposes `crevasseId` and `phase` for reproducible inspection.
+`node tools/capture-crevasses.mjs after medium` captures rim, ladder, shaft, daylight, headlamp and distant views
+with render-work counters. Repeat with `low` and `high`; images and metrics are written to ignored `tests/out/`.
 
 ## Data
 
