@@ -18,7 +18,10 @@ https://api.polyhaven.com/files/marble_cliff_01 and checked against its MD5 hash
 | AO | `08bc5e308c4843547ca7befe38cd7949` |
 
 `marble-cliff/albedo.jpg` is the diffuse map recompressed at quality 90.
-`marble-cliff/surface.png` packs normal X/Y into R/G, roughness into B and AO into A.
+`marble-cliff/surface.png` packs normal X/Y into R/G and roughness into B.
+`marble-cliff/ao.png` holds AO separately. Both data images are opaque to prevent
+canvas alpha premultiplication from altering the normal channels during resize.
+Runtime preparation packs AO into the texture array's alpha channel.
 Runtime array preparation reverses image rows to preserve the OpenGL UV basis,
 resizes to the graphics preset, and darkens the albedo to 62% for the rock layer.
 The source is a photographed material, not a survey of Everest's rock. The Yellow

@@ -47,13 +47,33 @@ try {
     },view);
     for(const traced of process.env.RT==='1'?[false,true]:[false]) {
       await page.evaluate(traced=>__sim.setRayTracing(traced),traced);
-      if(traced)await page.waitForFunction(async()=>{
+      if(traced){
+        await page.waitForFunction(()=>{const rt=__sim.rayTracing;if(rt.failed)throw Error(rt.failed);return rt.stats.active&&rt.snapshot&&rt.frame>8;},null,{timeout:180000});
+        await page.evaluate(async()=>{
+          window.__capturePaused=true;await new Promise(window.__captureRaf);
+          const s=__sim,rt=s.rayTracing,r=s.renderer,old=r.getRenderTarget(),auto=r.autoClear,viewport=r.getViewport(new (await import('three')).Vector4());
+          try{
+            r.autoClear=false;r.setScissorTest(false);
+            // Use the real native ray pass, with distinct RNG frames, to warm the
+            // camera's tiles without waiting for a complete landscape-atlas cycle.
+            for(let i=0;i<rt.caches.length;i++){
+              const c=rt.caches[i],cursor=c.cursor,px=(s.camera.position.x-c.rect.x)*c.rect.z*c.w-.5,py=(s.camera.position.z-c.rect.y)*c.rect.w*c.h-.5;
+              const xs=[Math.floor(px),Math.floor(px)+1],ys=[Math.floor(py),Math.floor(py)+1];
+              const ids=c.tiles.map((tile,id)=>({tile,id})).filter(({tile:t})=>xs.some(x=>x>=t.x&&x<t.x+t.w)&&ys.some(y=>y>=t.y&&y<t.y+t.h)).map(v=>v.id);
+              for(let pass=0;pass<8;pass++)for(const id of ids){rt.frame+=((i-rt.frame%4+4)%4)||4;c.cursor=id;rt.cacheStep();}
+              c.cursor=cursor;
+            }
+            r.getContext().finish();
+          }finally{r.autoClear=auto;r.setRenderTarget(old);r.setViewport(viewport);window.__capturePaused=false;if(window.__captureResume){window.__captureRaf(window.__captureResume);window.__captureResume=null;}}
+        });
+        await page.waitForFunction(async()=>{
         const s=__sim,rt=s.rayTracing;if(rt.failed)throw Error(rt.failed);
-        if(!rt.stats.active||!rt.historyValid)return false;
+        if(!rt.historyValid)return false;
         const {readCacheCoverage}=await import('/tests/rt-support.mjs');
         const coverage=readCacheCoverage(s);
         return coverage[0]>3&&coverage[2]>.00001&&coverage[3]>.9;
-      },null,{timeout:180000});
+        },null,{timeout:180000});
+      }
       await page.waitForTimeout(1500);
       // Drain queued software draws before asking the compositor for a capture.
       await page.evaluate(async()=>{window.__capturePaused=true;await new Promise(window.__captureRaf);__sim.renderer.getContext().finish();});
@@ -63,7 +83,7 @@ try {
         const s=__sim,frames=[],cpu=[];let previous=await new Promise(requestAnimationFrame);
         const gl=s.renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');
         const renderer=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
-        const samples=/swiftshader|llvmpipe/i.test(renderer)&&s.rayTracing.stats.active?12:60;
+        const samples=/swiftshader|llvmpipe/i.test(renderer)?12:60;
         for(let i=0;i<samples;i++){const now=await new Promise(requestAnimationFrame);frames.push(now-previous);previous=now;cpu.push(s.frameMs);}
         frames.sort((a,b)=>a-b);cpu.sort((a,b)=>a-b);
         const percentile=(values,p)=>values[Math.floor((values.length-1)*p)];

@@ -47,12 +47,13 @@ test('streamed Rapier shelf collider agrees with display and standing support',a
   g.world.routeFeatures={records:[r],sample:(x,z)=>sampleCornice(r,x,z)};
   const physics=g.physics;physics.world=new RAPIER.World({x:0,y:-9.81,z:0});physics.origin={x:0,y:6000,z:0};
   try{
-    for(const deposit of [null,{settled:true,sample:()=>({depth:.3})}]){
+    for(const deposit of [null,{settled:true,sample:()=>({depth:.3})},{settled:true,sample:()=>({depth:1.6})}]){
       physics.avalanche=deposit;physics.streamTerrain();physics.world.step();
       for(const [x,z] of [[12,8],[12.7,8.3],[10.9,7.4]]){
         const ray=new RAPIER.Ray({x,y:20,z},{x:0,y:-1,z:0});
         const hit=physics.world.castRay(ray,30,true,undefined,0x00010002);
         assert.ok(hit);assert.ok(Math.abs(6020-hit.timeOfImpact-groundHeight(g,x,z))<.002);
+        assert.ok(Math.abs(groundHeight(g,x,z)-Math.max(g.field.height(x,z)+(deposit?.sample(x,z).depth||0),sampleCornice(r,x,z).height))<.002);
       }
     }
   }finally{physics.reset();r.geometry.dispose();}

@@ -28,11 +28,13 @@ export class PhysicsScene {
     if (!this.g.free) emit(type, data);
   }
   groundHeight(x,z) {
-    return Math.max(this.g.field.height(x,z),this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity)+(!this.g.world?.crevasseField?.at(x,z) && this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    const base=this.g.field.height(x,z)+(!this.g.world?.crevasseField?.at(x,z) && this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    return Math.max(base,this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity);
   }
   contactHeight(x,z,y=this.g.P.y+1) {
     if(this.g.world?.crevasseField?.at(x,z))return querySupport(this.g,{x,y,z},100)?.height ?? -Infinity;
-    return Math.max(triangleHeight(this.g.field,x,z),this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    const base=triangleHeight(this.g.field,x,z)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    return Math.max(base,this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity);
   }
   disposeBody() {
     this.world?.free(); this.queue?.free(); this.world=null; this.queue=null;
@@ -163,7 +165,6 @@ export class PhysicsScene {
       const colliders=[];
       for(const r of this.g.world?.routeFeatures?.records||[])if(r.x>=x0&&r.x<x0+size&&r.z>=z0&&r.z<z0+size){
         const vertices=Float32Array.from(r.position,(value,k)=>value-[this.origin.x,this.origin.y,this.origin.z][k%3]);
-        if(deposit)for(let k=0;k<vertices.length;k+=3)vertices[k+1]+=deposit.sample(r.position[k],r.position[k+2]).depth;
         colliders.push(this.world.createCollider(RAPIER.ColliderDesc.trimesh(vertices,r.index).setFriction(FALL.friction.snow).setRestitution(FALL.restitution).setCollisionGroups(0x00020001)));
       }
       const holes=this.g.world?.crevasseField,candidates=holes?.nearby({x0,x1:x0+size,z0,z1:z0+size})||[];

@@ -31,6 +31,9 @@ The rock layer uses Poly Haven's CC0 Marble Cliff 01 photograph, normal,
 roughness and AO maps, packed into the existing texture arrays. There are no new
 terrain samplers or runtime CDN requests. See
 [material attribution and packing](../assets/materials/README.md). This material
+keeps AO in a separate opaque source image until runtime packing, so canvas
+resizing cannot premultiply and corrupt the normal or roughness channels.
+The photograph
 describes fractures and ledges; it does not claim to reproduce Everest's geology.
 Altitude strata and the Yellow Band tint remain authored. Snow accumulation also
 accounts for lee versus windward slope exposure.
@@ -50,7 +53,9 @@ and broken crests. The same arrays drive display, triangle support, streamed
 Rapier colliders and the nearby static RT snapshot. They do not alter the DEM or
 global landscape cache. Teleport, recovery, walking and skiing query the raised
 surface. These shelves are local approximations, not surveyed cornices or
-overhanging avalanche hazards.
+overhanging avalanche hazards. Settled avalanche snow and static shelves combine
+by taking the higher displayed surface. Shelf colliders stay at their displayed
+height rather than adding avalanche depth a second time.
 
 The previous continuous boot ribbon is replaced with alternating compressed
 footprints, tread marks and broken crust, instanced in spatial batches. Fixed
@@ -112,12 +117,21 @@ The production RT dynamic-shadow function also detects the boot (visibility
 0.777778 versus 1.0 without the caster). Supported boot soles are within 3 cm of
 the shelf surface.
 
+All 15 existing browser regression flows passed, covering terrain, graphics,
+postprocessing, hazards, crevasses, camps, UI, free viewing, memorials, extras,
+physics and the Everest, Lhotse and Nuptse expeditions. The new visual fidelity
+flow also passed separately and is included in `npm run test:e2e`. Shelf support
+tests cover avalanche deposits both below and above the shelf crest.
+
 `npm run capture:visual` records summit, ridge, rock-face and camp views at noon,
 clear weather, Medium, exposure 0.72 and a fixed camera pose. `RT=1` adds traced
 views after actual cache coverage reaches 0.9 at the camera; running frames alone
 do not count as coverage. JSON records camera, exposure, quality, renderer, RT
 state, cache coverage, frame intervals and CPU submission time beside the images.
-There are 60 samples per view (12 with traced lighting on a software renderer).
+There are 60 samples per view, or 12 on a software renderer. The capture fixture
+warms the camera's atlas tiles with eight passes of the production native-ray
+cache updater, using distinct sampling frames, before checking actual coverage.
+It does not establish convergence across the whole landscape atlas.
 
 ```sh
 VIEW=summit,rock RT=1 SHOTS=tests/out/fidelity-after npm run capture:visual

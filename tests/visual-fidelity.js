@@ -1,8 +1,12 @@
 return (async()=>{
   const s=__sim,g=s.game,assert=(v,m)=>{if(!v)throw Error(m);};
-  const {loadTerrainRock}=await import('/src/render/terrainAssets.js');
+  const {loadTerrainRock,applyPhotographedRock}=await import('/src/render/terrainAssets.js');
   const {groundHeight}=await import('/src/sim/surface.js');
-  const rock=await loadTerrainRock();assert(rock?.albedo.width===1024&&rock?.surface.width===1024,'Bundled PBR maps failed to decode');
+  const rock=await loadTerrainRock();assert(rock?.albedo.width===1024&&rock?.surface.width===1024&&rock?.ao.width===1024,'Bundled PBR maps failed to decode');
+  const bitmap=bytes=>createImageBitmap(new ImageData(new Uint8ClampedArray(bytes),1,1),{colorSpaceConversion:'none',premultiplyAlpha:'none'});
+  const neutral=await bitmap([128,128,200,255]),black=await bitmap([0,0,0,255]),color=new Uint8Array(4),surface=new Uint8Array(4);
+  applyPhotographedRock(1,color,surface,{albedo:neutral,surface:neutral,ao:black});
+  assert(surface[0]===128&&surface[1]===128&&surface[2]===200&&surface[3]===0,'AO altered the normal/roughness data');neutral.close();black.close();
   const footprints=g.world.routeWear.meshes.reduce((sum,o)=>sum+o.count,0);let flags=0;s.scene.traverse(o=>{
     if(o.userData.rtDynamic&&o.customDepthMaterial){flags++;assert(o.castShadow,'Flag lost contact shadows');}
   });
