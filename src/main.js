@@ -204,6 +204,7 @@ function setQuality(name) {
 }
 on('setQuality', setQuality);
 on('setRayTracing', value => rayTracing?.setEnabled(value));
+on('setRayTracingStrength', name => rayTracing?.setStrength(name));
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,

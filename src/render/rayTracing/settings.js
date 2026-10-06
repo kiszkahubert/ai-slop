@@ -34,3 +34,14 @@ export function lightingSize(w, h, scale = 0.5) {
   const s = Math.min(scale, RT_LIMITS.maxWidth/w, RT_LIMITS.maxHeight/h);
   return [Math.max(1, Math.floor(w*s)), Math.max(1, Math.floor(h*s))];
 }
+
+/** How strongly traced occlusion and bounce light show (1 = physically plain). Remembered per browser. */
+export const RT_STRENGTHS = Object.freeze({ subtle: 1.0, normal: 1.5, strong: 2.2 });
+const STRENGTH_KEY = 'everestSim.rayTracingStrength';
+export function initialStrength() {
+  const q = new URLSearchParams(location.search).get('rtStrength');
+  if (q && RT_STRENGTHS[q]) return q;
+  try { const v = localStorage.getItem(STRENGTH_KEY); if (v && RT_STRENGTHS[v]) return v; } catch { /* optional */ }
+  return 'normal';
+}
+export function rememberStrength(name) { try { localStorage.setItem(STRENGTH_KEY, name); } catch { /* optional */ } }

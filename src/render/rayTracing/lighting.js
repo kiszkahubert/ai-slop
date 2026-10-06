@@ -5,7 +5,7 @@ import { SHARED } from '../shared.js';
 import { emit, on } from '../../core/events.js';
 import { SceneCatalog, isDynamic, isVisible } from './catalog.js';
 import { RT_SHARED, BLACK, captureMaterial } from './materials.js';
-import { RT_LIMITS, initialRayTracing, rememberRayTracing, regionOrigin, lightingSize, shouldResetCaches, nextScale } from './settings.js';
+import { RT_LIMITS, RT_STRENGTHS, initialRayTracing, rememberRayTracing, initialStrength, rememberStrength, regionOrigin, lightingSize, shouldResetCaches, nextScale } from './settings.js';
 import { VERT, CACHE_FRAG, LOCAL_FRAG, TEMPORAL_FRAG, FILTER_FRAG } from './shaders.js';
 import { GpuTimer } from './timer.js';
 
@@ -41,6 +41,7 @@ export class RayTracingLighting {
     this.origin=new THREE.Vector3();this.previousOrigin=new THREE.Vector3();this.lastScanPos=new THREE.Vector3();this.lastScanFrame=null;this.previousVP=new THREE.Matrix4();this.historyValid=false;
     this.scale=RT_LIMITS.startScale;this.memoryScaleLimit=.5;this.frameMs=16.7;this.lastFrameAt=null;this.tileCount=1;this.localUpdateStride=1;this.stats={requested:this.requested,active:false,status:'Off',gpuMs:null,memoryBytes:0,triangles:0,snapshots:0,cacheTiles:0,localUpdateStride:1};
     this.lastSun=new THREE.Vector3();this.lastTime=null;
+    this.strength=initialStrength();RT_SHARED.uRtStrength.value=RT_STRENGTHS[this.strength];this.stats.strength=this.strength;
     this.timer=new GpuTimer(renderer.getContext());
     this.copy=quad(COPY,{tA:uniform(BLACK),tB:uniform(BLACK)});
     this.depthMaterial=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});
@@ -53,6 +54,11 @@ export class RayTracingLighting {
     this.stats.active=this.requested&&this.quality!=='low'&&this.ready&&!this.failed;
     this.stats.status=!this.requested?'Off':this.failed?'Unavailable: '+this.failed:this.quality==='low'?'Paused on Low':this.ready?'On — lighting converges while you explore':'Preparing lighting…';
     emit('rayTracingStatus',{...this.stats});
+  }
+  /** 'subtle' | 'normal' | 'strong': how pronounced traced occlusion and bounce light are. */
+  setStrength(name) {
+    if(!RT_STRENGTHS[name])return this.strength;
+    this.strength=name;RT_SHARED.uRtStrength.value=RT_STRENGTHS[name];rememberStrength(name);this.stats.strength=name;this.notify();return name;
   }
   /** Debug views: 0 off, 1 blend weight, 2 coverage (red near-camera rays, green landscape cache), 3 traced ambient, 4 traced sun. */
   debugView(mode=0){RT_SHARED.uRtDebug.value=mode;return mode;}

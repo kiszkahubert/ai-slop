@@ -52,7 +52,9 @@ Nuptse progress and high-camp stock while preserving the existing expedition.
 terrain skylight and one diffuse bounce while keeping the normal Three.js renderer. It is off by default;
 the choice is remembered separately from graphics quality. Medium and High support it; Low pauses it.
 Lighting converges over time, including on distant mountains. The first nearby geometry snapshot takes
-several seconds at Base Camp. `?rt=on` and `?rt=off` override the saved preference.
+several seconds at Base Camp. `?rt=on` and `?rt=off` override the saved preference. Beside the switch,
+**Subtle / Normal / Strong** sets how pronounced the traced occlusion and bounce light are (`?rtStrength=`).
+The internal lighting resolution adapts to your GPU automatically.
 
 WebGL2 with floating point render targets is required. Unsupported GPUs or initialization failures fall
 back to normal lighting and display an explanation beside the switch. See [the rendering notes](docs/ray-tracing.md)

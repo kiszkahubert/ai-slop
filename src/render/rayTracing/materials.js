@@ -33,10 +33,12 @@ vec4 rtLocalValue(vec3 p,vec3 n,out float weight){
   for(int y=0;y<2;y++)for(int x=0;x<2;x++){
     vec2 q=floor(uv/texel-0.5)*texel+(vec2(x,y)+.5)*texel;vec4 pos=texture2D(uRtPosition,q);vec3 nn=texture2D(uRtNormal,q).xyz;
     vec4 value=texture2D(uRtLocal,q);
-    float w=pos.a>.5&&value.a>=0.0?exp(-length(pos.xyz+uRtOrigin-p)/max(.25,length(p-uRtCamera)*.015))*pow(max(dot(n,nn),0.0),16.0):0.0;
+    // Generous matching: the lighting buffer is a fraction of the screen resolution, and strict position/normal
+    // tests rejected whole rows of pixels on bumpy ground (stripes that crawled as the camera moved).
+    float w=pos.a>.5&&value.a>=0.0?exp(-length(pos.xyz+uRtOrigin-p)/max(.4,length(p-uRtCamera)*.04))*pow(max(dot(n,nn),0.0),4.0):0.0;
     sum+=value*w;ws+=w;
   }
-  weight=(1.0-smoothstep(80.0,120.0,length(p-uRtCamera)))*smoothstep(.1,.6,ws);return sum/max(ws,.0001);
+  weight=(1.0-smoothstep(80.0,120.0,length(p-uRtCamera)))*smoothstep(.02,.25,ws);return sum/max(ws,.0001);
 }
 // Everything the material needs is looked up once per fragment (rtPrepare) and reused by the ambient, sun and
 // shadow terms; the lookups are the expensive part of the forward pass.

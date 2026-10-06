@@ -19,7 +19,11 @@ let rayTracingStatus = { requested: false, status: 'Off' };
 on('rayTracingStatus', status => { rayTracingStatus = status; renderRayTracing(); });
 function renderRayTracing() {
   for (const box of document.querySelectorAll('[data-ray-tracing]')) {
-    box.innerHTML = `<label><input type="checkbox" data-rt-toggle ${rayTracingStatus.requested ? 'checked' : ''}> Ray-traced lighting</label><small class="dim" style="display:block">${rayTracingStatus.status}</small>`;
+    const strength = rayTracingStatus.strength || 'normal';
+    const levels = [['subtle', 'Subtle'], ['normal', 'Normal'], ['strong', 'Strong']]
+      .map(([id, label]) => `<button data-rt-strength="${id}" class="${id === strength ? 'active' : ''}" ${rayTracingStatus.requested ? '' : 'disabled'}>${label}</button>`).join('');
+    box.innerHTML = `<label><input type="checkbox" data-rt-toggle ${rayTracingStatus.requested ? 'checked' : ''}> Ray-traced lighting</label>
+      <span class="qbtns" style="margin-left:8px">${levels}</span><small class="dim" style="display:block">${rayTracingStatus.status}</small>`;
   }
 }
 
@@ -41,6 +45,8 @@ export function initScreens(glCanvas) {
   renderRayTracing();
   document.addEventListener('change', e => { if (e.target.matches('[data-rt-toggle]')) emit('setRayTracing', e.target.checked); });
   document.addEventListener('click', (e) => {
+    const rs = e.target.closest('[data-rt-strength]');
+    if (rs) { emit('setRayTracingStrength', rs.dataset.rtStrength); return; }
     const b = e.target.closest('[data-quality]');
     if (!b) return;
     emit('setQuality', b.dataset.quality);

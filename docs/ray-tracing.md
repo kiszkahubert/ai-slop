@@ -35,13 +35,48 @@ remembered preference. Low suspends updates without clearing that preference.
   sun/weather changes invalidate history. Covered terrain replaces its baked horizon AO and blue ambient snow
   term; nearby covered pixels suppress SSAO. Small material/cavity detail remains.
 
+## Stability, strength and debug views
+
+- The landscape caches are running averages of the last 8 updates per texel. They follow the sun as it moves
+  and are never thrown away for ordinary sun or sky motion. Only a discontinuity starts them again: a time jump
+  of more than an hour (resting at camp) or the sun jumping ~6° between frames (choosing a time of day). Earlier
+  versions reset all caches for every ~1° of sun movement, every few seconds of play. The traced lighting then
+  dropped out and faded back in, which read as flicker.
+- Temporal accumulation keeps 90% history, clamped to the current neighbourhood's mean ± 1.25σ. A min/max
+  clamp would discard history with one noisy sample per pixel. Near-camera results are matched to
+  full-resolution pixels with tolerances that suit the lower lighting resolution. Strict tests rejected whole
+  rows on bumpy ground and caused crawling stripes.
+- **Strength** (pause menu: Subtle / Normal / Strong, or `?rtStrength=`; remembered) scales what tracing
+  changes relative to an open sky: `ambient = sky · (traced / sky)^k`, with k = 1.0 / 1.5 / 2.2.
+  Subtle is the plain physical result. Occluded corners get darker and light bouncing off sunlit snow and
+  ice gets brighter as k rises.
+- `window.__sim.rayTracing.debugView(n)` shows the per-pixel inputs: 1 blend weight, 2 coverage (red =
+  near-camera rays, green = landscape cache), 3 traced ambient light, 4 traced sun visibility; 0 turns it off.
+  `setStrength('strong')` changes the strength from the console.
+
+Where the difference shows: in the morning and evening, Base Camp lies in the shadow of the ridge to the east.
+Ray-traced sun visibility puts the tents, seracs and flags in shade too, whereas the regular renderer's
+32 m mountain-shadow approximation leaves some props sunlit. In shade generally, traced ambient light shows
+real occlusion under seracs, between tents and in hollows, plus bounce from sunlit ice. At noon on open snow
+the physically correct difference is small; use Strong to make it pronounced.
+
 ## Budgets and diagnostics
 
-The initial local resolution is half of each screen axis, capped at 960×540. GPU timing can reduce it to a
-quarter. If quarter-resolution lighting still exceeds the 5 ms target, local rays update every second frame;
-surface capture, dynamic shadows, validated reprojection and filtering continue each frame. Newly exposed
-pixels use landscape lighting until a valid local sample arrives. Cache tile work also adapts to GPU timing.
-Without timer-query support, the fixed conservative schedule and memory guard remain available.
+The local lighting starts at 0.35 of each screen axis, capped at 960×540. Every 60 frames it moves one step
+along 0.5 / 0.35 / 0.25 / 0.18 of the screen. With GPU timer queries it steps down above the 5 ms budget and
+up below 2.75 ms. Without them, which is common on Linux / Mesa, it uses the smoothed frame interval: down
+above 24 ms, up below 17.5 ms. Rays trace every frame: the old every-second-frame reuse is gone, because it
+alternated reprojected and fresh pixels. Each pixel casts two rays: the sun ray, and one diffuse bounce
+whose own sunlight comes from the landscape cache. Cache tile work also adapts to the same signal.
+
+Main-thread work is kept small:
+- The capture scene is rescanned every 20 frames or 15 m; in between only tracked meshes are synced.
+- Region lists share each geometry's arrays between instances, so a worker message copies them once.
+- Parts smaller than 0.3 m are skipped (pebbles, pegs, guy lines).
+- Camp models are detailed within 180 m of the region centre and simple beyond.
+- The prop texture atlas is built once.
+
+At Base Camp the region list went from about 2 s to about 55 ms on the main thread.
 
 The allocation estimate has a 256 MiB limit and includes height/hierarchy/mask textures, both cache buffers,
 surface/history/filter buffers, BVH/material textures, the dynamic shadow target and an 8 MiB driver allowance.
@@ -51,7 +86,7 @@ The largest current Base Camp region contains approximately 2.6 million triangle
 than empty terrain. Initial shader compilation and worker setup can cause a first-use hitch; warm measurements
 exclude that setup. Other cameras, weather, drivers and scenes can cost more than the benchmark below.
 
-Inspect `window.__sim.rayTracing.stats`, `scale`, `localUpdateStride` and `failed` in the browser console.
+Inspect `window.__sim.rayTracing.stats` (including `scale`, `frameMs`, `gpuMs`, `strength`) and `failed` in the browser console.
 `window.__sim.setRayTracing(true/false)` changes the option and persists it. Disposal and failure restore the
 original material callbacks and release the lighting worker, textures, structures and render targets.
 
