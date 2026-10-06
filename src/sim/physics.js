@@ -8,7 +8,7 @@ import { TIME_SCALE } from '../config.js';
 import { clamp } from '../core/math.js';
 import { emit, toast } from '../core/events.js';
 import { hypF, packLoad } from './physiology.js';
-import { triangleHeight } from './surface.js';
+import { triangleHeight, querySupport } from './surface.js';
 
 let ready;
 export const initPhysics = () => ready ||= RAPIER.init();
@@ -28,9 +28,10 @@ export class PhysicsScene {
     if (!this.g.free) emit(type, data);
   }
   groundHeight(x,z) {
-    return this.g.field.height(x,z)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    return this.g.field.height(x,z)+(!this.g.world?.crevasseField?.at(x,z) && this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
   }
-  contactHeight(x,z) {
+  contactHeight(x,z,y=this.g.P.y+1) {
+    if(this.g.world?.crevasseField?.at(x,z))return querySupport(this.g,{x,y,z},100)?.height ?? -Infinity;
     return triangleHeight(this.g.field,x,z)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
   }
   disposeBody() {
@@ -44,10 +45,12 @@ export class PhysicsScene {
   }
   resetExperiment() {
     if (!this.g.free && !this.g.debug) return false;
-    const before=this.preTrigger;
+    const before=this.preTrigger || (this.g.P.ski?.air && this.g.P.lastSupported ? {P:this.g.P.lastSupported,view:this.g.view}:null);
     this.reset();
     if (before) { Object.assign(this.g.P,before.P); Object.assign(this.g.view,before.view); }
-    this.g.P.y=this.g.field.height(this.g.P.x,this.g.P.z);
+    if(this.g.P.ski)Object.assign(this.g.P.ski,{air:null,u:0,w:0,speed:0});
+    const safe=this.g.world?.crevasseField?.safePosition(this.g.P.x,this.g.P.z);
+    if(safe)Object.assign(this.g.P,safe);else this.g.P.y=this.g.field.height(this.g.P.x,this.g.P.z);
     this.g.auto=null; emit('teleported');
     toast('Snow and fall experiment reset.', 'info', 3);
     return true;
@@ -59,7 +62,7 @@ export class PhysicsScene {
     const release=source || findRelease(field,P.x,P.z);
     if (!release) { toast('No suitable snow slope uphill here. Try the Lhotse Face or Nuptse north face.', 'info', 4); return false; }
     this.preTrigger={ P:{ x:P.x,y:field.height(P.x,P.z),z:P.z,facing:P.facing,clipped:P.clipped },view:{...this.g.view} };
-    this.avalanche=new Avalanche(field,release,{seed,...options});
+    this.avalanche=new Avalanche(field,release,{seed,crevasseField:this.g.world?.crevasseField,...options});
     this.burial=null; this.g.auto=null;
     this.note('avalanche',{ x:release.x,z:release.z,volume:this.avalanche.initialVolume });
     toast('A slab fractures uphill. Watch the slope!', 'warn', 5);
@@ -79,7 +82,7 @@ export class PhysicsScene {
     const { P,S }=this.g;
     if (P.falling) return false;
     this.disposeBody(); this.burial=null;
-    if(!this.preTrigger && (this.g.free || this.g.debug)) this.preTrigger={P:{x:P.x,y:P.y,z:P.z,facing:P.facing,clipped:P.clipped},view:{...this.g.view}};
+    if(!this.preTrigger && (this.g.free || this.g.debug)) this.preTrigger={P:{x:P.x,y:P.y,z:P.z,facing:P.facing,clipped:P.clipped,...(reason==='crevasse'?P.lastSupported:{})},view:{...this.g.view}};
     this.origin={x:P.x,y:this.groundHeight(P.x,P.z),z:P.z};
     this.deposit=this.avalanche?.settled ? this.avalanche : null;
     this.world=new RAPIER.World({x:0,y:-FALL.gravity,z:0});
@@ -122,13 +125,13 @@ export class PhysicsScene {
         this.world.createImpulseJoint(RAPIER.JointData.rope(3,{x:0,y:0,z:0},{x:0,y:0,z:0}),anchor,this.parts.get('pelvis').rb,true);
       }
     }
-    P.falling={t:0,startY:P.y,maxV:0,region,reason,arresting:false,incapacitated:false,impact:0};
+    P.falling={t:0,startY:P.y,maxV:0,region,reason,phase:'falling',crevasseId:this.g.world?.crevasseField?.at(P.x,P.z)?.id ?? null,arresting:false,incapacitated:false,impact:0};
     P.recovery=null;
     P.ski=null; P.onLadder=false; P.moving=false; P.sprint=false; this.g.auto=null;
     this.still=0; this.deadStill=0; this.axeContact=0; this.dugOut=false; this.corpseSettled=false; this.capture(); this.previous=this.poses;
     if(!this.g.free) { S.falls++; emit('fall',region,P.y); }
     this.note('knockdown',{reason});
-    toast(reason==='avalanche'?'Caught in moving snow!':'You fell — hold SPACE to self-arrest.', 'warn', 4);
+    toast(reason==='avalanche'?'Caught in moving snow!':reason==='crevasse'?'Falling into a crevasse!':'You fell — hold SPACE to self-arrest.', 'warn', 4);
     return true;
   }
   streamTerrain() {
@@ -151,8 +154,27 @@ export class PhysicsScene {
         buckets[surfaceType(field,x0+(x+.5)*cell,z0+(z+.5)*cell)].push(a,c,b,b,c,d);
       }
       const colliders=[];
-      for(const [type,idx] of Object.entries(buckets)) if(idx.length) colliders.push(this.world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(positions),new Uint32Array(idx))
-        .setFriction(FALL.friction[type]).setRestitution(FALL.restitution).setCollisionGroups(0x00020001)));
+      const holes=this.g.world?.crevasseField,candidates=holes?.nearby({x0,x1:x0+size,z0,z1:z0+size})||[];
+      for(const [type,idx] of Object.entries(buckets)) if(idx.length) {
+        let vertices=positions,indices=idx;
+        if(candidates.length) {
+          vertices=[];
+          for(let k=0;k<idx.length;k+=3) {
+            const tri=idx.slice(k,k+3).map(index=>[positions[index*3]+this.origin.x,positions[index*3+1]+this.origin.y,positions[index*3+2]+this.origin.z]);
+            for(const p of holes.cutTriangle(tri,candidates))vertices.push(p[0]-this.origin.x,p[1]-this.origin.y,p[2]-this.origin.z);
+          }
+          indices=Array.from({length:vertices.length/3},(_,k)=>k);
+        }
+        if(indices.length)colliders.push(this.world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(vertices),new Uint32Array(indices))
+          .setFriction(FALL.friction[type]).setRestitution(FALL.restitution).setCollisionGroups(0x00020001)));
+      }
+      for(const cv of candidates)if(cv.x>=x0 && cv.x<x0+size && cv.z>=z0 && cv.z<z0+size) {
+        const vertices=cv.geometry.flatMap(p=>[p[0]-this.origin.x,p[1]-this.origin.y,p[2]-this.origin.z]);
+        colliders.push(this.world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(vertices),new Uint32Array(Array.from({length:vertices.length/3},(_,k)=>k)))
+          .setFriction(FALL.friction.ice).setCollisionGroups(0x00020001).setRestitution(FALL.restitution)));
+        for(const part of cv.ladderParts||[])colliders.push(this.world.createCollider(RAPIER.ColliderDesc.cuboid(...part.half)
+          .setTranslation(part.center.x-this.origin.x,part.center.y-this.origin.y,part.center.z-this.origin.z).setRotation(part.rotation).setFriction(.5).setCollisionGroups(0x00020001)));
+      }
       // Static seracs close enough to this tile to matter during a tumble.
       for(const list of this.g.world?.seracGrid?.values() || []) for(const s of list) {
         if(s.x<x0 || s.x>=x0+size || s.z<z0 || s.z>=z0+size) continue;
@@ -215,11 +237,12 @@ export class PhysicsScene {
     const x=tip.x+this.origin.x,z=tip.z+this.origin.z,y=tip.y+this.origin.y;
     const torso=this.parts.get('torso').rb, prone=new THREE.Vector3(0,0,-1).applyQuaternion(torso.rotation());
     // The axe must reach the snow and face into the slope. No braking in mid-air.
-    const gap=y-this.contactHeight(x,z);
+    const holes=this.g.world?.crevasseField,ice=holes?.contact({x,y,z},.3);
+    const gap=ice?ice.distance:y-this.contactHeight(x,z,y+.2);
     if(gap<.3 && prone.y<.5) this.axeContact=.2;
-    if(gap>.6 || prone.y>.6 || !this.axeContact) return;
+    if(gap>.6 || gap<-.3 || prone.y>.6 || !this.axeContact) return;
     const v=torso.linvel(), speed=Math.hypot(v.x,v.y,v.z); if(speed<.01) return;
-    const material=surfaceType(field,x,z), grip=material==='ice'?.18:material==='rock'?.12:1;
+    const material=ice?'ice':surfaceType(field,x,z), grip=material==='ice'?.18:material==='rock'?.12:1;
     const strength=FALL.arrestForce*grip*hypF(S)*clamp(S.stamina/20,0,1)/(1+(speed/15)**2);
     const mass=[...this.parts.values()].reduce((sum,p)=>sum+p.mass,0);
     const impulse=Math.min(strength*dt,mass*speed*.25);
@@ -230,7 +253,7 @@ export class PhysicsScene {
     const {P,S,field}=this.g,f=P.falling;
     if(!requested || f.incapacitated || this.g.mode==='dead' || S.stamina<=0 || this.burial) return;
     const torso=this.parts.get('torso').rb,p=torso.translation(),x=p.x+this.origin.x,z=p.z+this.origin.z;
-    if(p.y+this.origin.y>this.contactHeight(x,z)+.8) return;
+    if(p.y+this.origin.y>this.contactHeight(x,z,p.y+this.origin.y)+.8) return;
     // Use ground contact to roll onto the stomach before planting the pick.
     // This is a bounded bracing torque, never a pose snap or an airborne rotation.
     const s=field.slope(x,z,8),normal=new THREE.Vector3(-s.gx,1,-s.gz).normalize();
@@ -248,6 +271,7 @@ export class PhysicsScene {
     const A=this.avalanche; if(!A || A.settled) return;
     for(const part of this.parts.values()) {
       const p=part.rb.translation(),x=p.x+this.origin.x,z=p.z+this.origin.z,y=p.y+this.origin.y;
+      if(this.g.world?.crevasseField?.at(x,z))continue;
       const s=A.sample(x,z), surface=triangleHeight(this.g.field,x,z)+s.depth;
       const submerged=clamp((surface-y+part.def.radius)/(2*part.def.radius),0,1);
       if(s.depth<.04 || !submerged) continue;
@@ -261,7 +285,7 @@ export class PhysicsScene {
   updateBurial(dt, arrest) {
     const A=this.avalanche; if(!A) return;
     const head=this.parts.get('head').rb.translation(),x=head.x+this.origin.x,z=head.z+this.origin.z;
-    const snow=A.sample(x,z),cover=triangleHeight(this.g.field,x,z)+snow.depth-(head.y+this.origin.y+.1);
+    const snow=this.g.world?.crevasseField?.at(x,z)?{depth:0}:A.sample(x,z),cover=triangleHeight(this.g.field,x,z)+snow.depth-(head.y+this.origin.y+.1);
     if(snow.depth>.1 && (cover>.1 || (this.burial && cover>-.05))) {
       if(!this.burial) { this.burial={cover,air:180,shallow:cover<=.6}; this.note('burial',{depth:cover}); }
       Object.assign(this.burial,{cover,shallow:cover<=.6});
@@ -306,7 +330,7 @@ export class PhysicsScene {
     }
     this.accum=Math.max(0,this.accum);
   }
-  hasMotion() { return (this.g.P.falling && !this.corpseSettled) || (this.avalanche && !this.avalanche.settled); }
+  hasMotion() { return (this.g.P.falling && !['trapped','suspended'].includes(this.g.P.falling.phase) && !this.corpseSettled) || (this.avalanche && !this.avalanche.settled); }
   tick(dt, arrest) {
     const {P,S}=this.g,f=P.falling; f.t+=dt; f.impact*=Math.exp(-dt*8);
     // Pin buried bodies before installing solid deposit colliders, avoiding an ejection.
@@ -339,7 +363,9 @@ export class PhysicsScene {
     // Small hand motions while bracing must not keep a stationary climber helpless.
     const bodySpeed=Math.sqrt(moving.reduce((sum,p)=>sum+p.mass*p.speed*p.speed,0)/moving.reduce((sum,p)=>sum+p.mass,0));
     const angularSpeed=Math.max(...[...this.parts.values()].map(({rb})=>{const w=rb.angvel();return Math.hypot(w.x,w.y,w.z);}));
-    const contact=p.y+this.origin.y-this.contactHeight(P.x,P.z)<1.3;
+    const holes=this.g.world?.crevasseField,cv=holes?.at(P.x,P.z),below=cv && P.y<this.g.field.height(P.x,P.z)-.4;
+    const suspended=below && this.ropeAnchor && Math.hypot(p.x+this.origin.x-this.ropeAnchor.x,p.y+this.origin.y-this.ropeAnchor.y,p.z+this.origin.z-this.ropeAnchor.z)>2.65;
+    const contact=p.y+this.origin.y-this.contactHeight(P.x,P.z,p.y+this.origin.y)<1.3 || suspended;
     const snow=this.avalanche?.sample(P.x,P.z);
     this.still=contact && bodySpeed<FALL.recoverySpeed && speed<1.5 && !this.burial && (!snow || Math.hypot(snow.vx,snow.vz)<.4)?this.still+dt:0;
     if(this.g.mode==='dead') {
@@ -347,7 +373,16 @@ export class PhysicsScene {
       if(this.deadStill>2) { this.corpseSettled=true; for(const {rb} of this.parts.values()) rb.sleep(); }
     }
     if((this.still>FALL.recoveryDelay || this.dugOut) && this.g.mode==='play') {
-      const pose=this.pose(1), wasArrest=f.arresting, height=this.groundHeight(P.x,P.z);
+      if(below) {
+        f.phase=suspended?'suspended':'trapped';f.crevasseId=cv.id;P.velocity=null;
+        for(const {rb} of this.parts.values())rb.sleep();this.note(f.phase,{id:cv.id});
+        toast(suspended?'Suspended from the fixed line.':'Trapped below the crevasse rim. No rescue equipment is available.', 'warn', 5);return;
+      }
+      // Recovery requires real standing support. A rim or wall contact must not
+      // restore the walking avatar above an empty aperture.
+      const support=querySupport(this.g,{x:P.x,y:this.dugOut&&!cv?this.groundHeight(P.x,P.z):p.y+this.origin.y,z:P.z},1.5);
+      if(!support || support.kind==='cavity')return;
+      const pose=this.pose(1), wasArrest=f.arresting, height=support.height;
       this.disposeBody(); P.falling=null; P.y=height; P.velocity=null; P.recovery={pose,t:0};
       this.note('recovered'); toast(wasArrest?'Self-arrest — stopped with the ice axe.':'You stopped. Find stable ground and clip in.', 'warn', 4);
     }

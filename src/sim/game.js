@@ -43,7 +43,7 @@ export function newGame(seed, { free = false } = {}) {
   g.time = START_TIME_H;
   g.weather = new Weather(seed);
   const m = g.routes.main, a = m.at(m.s('ebc') + 20), b = m.at(m.s('ebc') + 60);
-  Object.assign(g.P, { x: a.x - a.dz * 4, z: a.z + a.dx * 4, falling: null, clipped: -1, onLadder: false, routeHint: -1, ski: null });
+  Object.assign(g.P, { x: a.x - a.dz * 4, z: a.z + a.dx * 4, falling: null, clipped: -1, onLadder: false, routeHint: -1, ski: null, lastSupported:null });
   g.P.y = g.field.height(g.P.x, g.P.z);
   g.view.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z)); g.P.facing = g.view.yaw; g.view.pitch = -0.1;
   g.S.maxAlt = g.P.y;
@@ -204,7 +204,7 @@ function serialize() {
 }
 export function save(silent) {
   if (game.free) return;            // free viewing never overwrites the expedition save
-  if(game.P.falling || (game.physics?.avalanche && !game.physics.avalanche.settled)) { if(!silent) toast('Cannot save during a fall or moving avalanche.', 'warn', 3); return; }
+  if(game.P.falling || game.P.ski?.air || (game.physics?.avalanche && !game.physics.avalanche.settled)) { if(!silent) toast('Cannot save during a fall, airborne crossing or moving avalanche.', 'warn', 3); return; }
   lastSave = serialize();
   try { localStorage.setItem(SAVE_KEY, lastSave); } catch { /* private mode: keep the in-memory copy */ }
   if (!silent) toast('Progress saved.', 'good');
@@ -250,6 +250,8 @@ export function load() {
   for (const c of game.camps) game.S.stock[c.id] ??= c.stock;
   Object.assign(game.P, { x: d.P.x, z: d.P.z, facing: d.P.facing, clipped: d.P.clipped ?? -1, falling: null, routeHint: -1, ski: null });
   game.P.y = game.field.height(game.P.x, game.P.z);
+  const safe=game.world?.crevasseField?.safePosition(game.P.x,game.P.z);if(safe)Object.assign(game.P,safe);
+  game.P.lastSupported=null;
   game.time = d.time; game.view.yaw = d.yaw; game.auto = null; game.free = false;
   game.weather = new Weather(game.S.seed);
   resetDebrief();
@@ -301,6 +303,7 @@ export function enterFreeViewing() {
  */
 export function exitFreeViewing() {
   if (!game.free) return;
+  if(game.P.falling || game.P.ski?.air) {toast('Return to supported ground with teleport or Shift+B before starting an expedition.', 'warn', 4);return false;}
   const { P } = game;
   game.free = false; game.auto = null; game.weather.clear = false;
   const S = game.S = freshStats(game.S.seed);
@@ -326,8 +329,10 @@ export function placePlayer(x, z, yaw) {
   game.physics?.reset();
   const { P, view } = game;
   Object.assign(P, { x, z, falling: null, clipped: -1, ropeHint: -1, onLadder: false, routeHint: -1, moving: false });
-  if (P.ski) Object.assign(P.ski, { u: 0, w: 0, speed: 0 });
+  if (P.ski) Object.assign(P.ski, { u: 0, w: 0, speed: 0, air:null });
   P.y = game.field.height(x, z);
+  const safe=game.world?.crevasseField?.safePosition(x,z);if(safe)Object.assign(P,safe);
+  P.lastSupported=null;
   if (yaw !== undefined) { view.yaw = yaw; P.facing = yaw; }
   game.auto = null;
   refreshConditions();

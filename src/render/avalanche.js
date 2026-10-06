@@ -15,23 +15,37 @@ export class AvalancheView {
   create(A) {
     this.clear(); this.event=A; this.group=new THREE.Group(); this.scene.add(this.group);
     // Render on the native DEM vertices so thin snow is not hidden inside coarse triangles.
-    const cell=A.field.cell||4,n=Math.ceil(A.size*A.cell/cell)+1,pos=new Float32Array(n*n*3),idx=[];
+    const cell=A.field.cell||4,n=Math.ceil(A.size*A.cell/cell)+1,grid=new Float32Array(n*n*3),idx=[];
     const x0=A.field.x0+Math.floor((A.x0-A.field.x0)/cell)*cell,z0=A.field.z0+Math.floor((A.z0-A.field.z0)/cell)*cell;
-    this.base=new Float32Array(n*n);this.flowIndex=new Int32Array(n*n);this.flowIndex.fill(-1);this.flowWeights=new Float32Array(n*n*4);
     for(let j=0;j<n;j++) for(let i=0;i<n;i++) {
-      const k=j*n+i,x=x0+i*cell,z=z0+j*cell;pos[k*3]=x;pos[k*3+2]=z;
-      this.base[k]=pos[k*3+1]=A.field.height(x,z);
+      const k=j*n+i,x=x0+i*cell,z=z0+j*cell;grid.set([x,A.field.height(x,z),z],k*3);
+      if(i<n-1&&j<n-1) idx.push(k,k+n,k+1,k+1,k+n,k+n+1);
+    }
+    // Deposits use the same aperture subtraction as the glacier. Interpolated
+    // grid-cell snow must never render a sheet across a shaft.
+    let pos=grid,indices=idx;
+    if(A.crevasseField?.nearby({x0,x1:x0+(n-1)*cell,z0,z1:z0+(n-1)*cell}).length) {
+      const vertices=[];
+      for(let k=0;k<idx.length;k+=3) {
+        const triangle=idx.slice(k,k+3).map(i=>Array.from(grid.slice(i*3,i*3+3)));
+        for(const p of A.crevasseField.cutTriangle(triangle))vertices.push(...p);
+      }
+      pos=new Float32Array(vertices);indices=null;
+    }
+    const count=pos.length/3;
+    this.base=new Float32Array(count);this.flowIndex=new Int32Array(count);this.flowIndex.fill(-1);this.flowWeights=new Float32Array(count*4);
+    for(let k=0;k<count;k++) {
+      const x=pos[k*3],z=pos[k*3+2];this.base[k]=pos[k*3+1];
       const fx=(x-A.x0)/A.cell-.5,fz=(z-A.z0)/A.cell-.5;
       if(fx>=0&&fz>=0&&fx<A.size-1&&fz<A.size-1) {
         const fi=Math.floor(fx),fj=Math.floor(fz),u=fx-fi,v=fz-fj;this.flowIndex[k]=fj*A.size+fi;
         this.flowWeights.set([(1-u)*(1-v),u*(1-v),(1-u)*v,u*v],k*4);
       }
-      if(i<n-1&&j<n-1) idx.push(k,k+n,k+1,k+1,k+n,k+n+1);
     }
-    const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.BufferAttribute(pos,3)); geometry.setIndex(idx);
+    const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.BufferAttribute(pos,3)); if(indices)geometry.setIndex(indices);
     const material=new THREE.MeshStandardMaterial({color:0xe8eff4,roughness:.95,side:THREE.DoubleSide,vertexColors:true,transparent:true,depthWrite:false});
     // Per-vertex alpha hides dry cells instead of drawing a white sheet over the slope.
-    geometry.setAttribute('color',new THREE.BufferAttribute(new Float32Array(n*n*4),4));
+    geometry.setAttribute('color',new THREE.BufferAttribute(new Float32Array(count*4),4));
     this.surface=new THREE.Mesh(geometry,material); this.surface.receiveShadow=true; this.surface.frustumCulled=false; this.group.add(this.surface);
     const canvas=document.createElement('canvas'); canvas.width=canvas.height=128;
     const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(128,128),noise=makeNoise2D(mulberry32(A.seed+33));

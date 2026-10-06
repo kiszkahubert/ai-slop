@@ -92,7 +92,7 @@ export function updateHUD(dt) {
   // status
   const pills = [], ropes = game.world.ropes;
   if (game.free) pills.push('<span class="pill on">Free viewing · [T] teleport</span>');
-  if(P.falling) pills.push(`<span class="pill alert">${P.falling.arresting?'Ice axe engaged':'Falling'} · ${Math.round(P.falling.maxV*3.6)} km/h</span>`);
+  if(P.falling) pills.push(`<span class="pill alert">${P.falling.phase==='trapped'?'Trapped':P.falling.phase==='suspended'?'Suspended':P.falling.arresting?'Ice axe engaged':P.falling.reason==='crevasse'?'Falling into crevasse':'Falling'} · ${Math.round(P.falling.maxV*3.6)} km/h</span>`);
   const burial=game.physics?.burial;
   if(burial) pills.push(`<span class="pill alert">Buried · ${burial.cover.toFixed(1)} m${game.free?'':` · air ${Math.ceil(burial.air)} s`}</span>`);
   if (P.ski) pills.push(`<span class="pill on">⛷ Skis · ${Math.round(P.ski.speed * 3.6)} km/h${P.ski.tuck ? ' · tuck' : P.ski.brake ? ' · snowplough' : ''}</span>`);
@@ -129,8 +129,12 @@ export function updateHUD(dt) {
       }
     }
   }
-  if(P.falling) pr=burial ? (burial.shallow||game.free?'Hold SPACE to dig out': 'Deep burial — unable to dig out') : 'Hold SPACE to plant your ice axe and self-arrest';
-  if(game.free && burial) pr+=' · Shift+B resets the experiment';
+  if(P.falling) {
+    const phase=P.falling.phase;
+    pr=phase==='trapped'?'Trapped below the rim — load your last save from Pause':phase==='suspended'?'Suspended from protection — load your last save from Pause':burial ? (burial.shallow||game.free?'Hold SPACE to dig out': 'Deep burial — unable to dig out') : 'Hold SPACE to plant your ice axe on reachable solid ground';
+    if(P.falling.reason==='crevasse' && phase==='falling' && !game.physics?.axeContact)pr='Falling into crevasse — protection and impacts determine the outcome';
+  }
+  if(game.free && (burial || P.falling || P.ski?.air)) pr='[T] Teleport · Shift+B returns to supported ground';
   if (el.prompt.textContent !== pr) el.prompt.textContent = pr;
   $('crosshair').classList.toggle('hidden',!game.view.fp || !!(P.falling || P.recovery));
   $('burialOverlay').style.opacity=burial?clamp(burial.cover/1.5,0,.85):0;

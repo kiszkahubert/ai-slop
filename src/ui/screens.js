@@ -141,7 +141,7 @@ function renderTravel() {
   const time = hours.map(([h, n]) => `<button data-act="hour" data-h="${h}" ${Math.abs(hod - h) < 0.4 ? 'disabled' : ''}>${n}</button>`).join('');
   $('campCard').innerHTML = `
     <h2>Free viewing <span class="dim" style="font-weight:400">· ${here} · ${fmt(game.P.y)} m</span></h2>
-    <p>Teleport anywhere on the route. Survival systems are off — no hypoxia, cold or falls — and nothing is saved, so your
+    <p>Teleport anywhere on the route. Survival systems are off — no hypoxia, cold or injury — and nothing is saved, so your
       expedition save is kept. Walk, look around, or press <kbd>F</kbd> to follow the route from wherever you land.</p>
     <h3>Teleport</h3>
     <div class="btns dest">${dests}</div>
@@ -156,7 +156,7 @@ function renderTravel() {
     <div class="btns">${speeds}</div>
     <h3>Physics experiments</h3>
     <p class="note">Try a fall with J or release an avalanche with B. Hold Space to self-arrest or escape shallow burial.
-      Injuries are disabled here. Shift+B resets the avalanche and returns you to its starting point.</p>
+      Crevasses have physical depth and can trap you. Injuries are disabled here. Shift+B resets physics and returns you to supported ground.</p>
     <div class="btns"><button data-act="test-fall">Test fall</button><button data-act="avalanche">Release avalanche</button><button data-act="reset-physics">Reset experiment</button></div>
     <h3>Climb for real</h3>
     <p class="note">Survival systems back on, right here: a fresh expedition from where you stand, acclimatized as after the

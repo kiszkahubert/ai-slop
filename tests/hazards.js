@@ -16,6 +16,7 @@ reset(); const cv = g.world.crevasses.find((c) => c.ladder); const vx = -cv.uz, 
 W.teleport(cv.x + cv.ux * 8 - vx * (cv.w / 2 + 3), cv.z + cv.uz * 8 - vz * (cv.w / 2 + 3));
 let t = 0; while (t < 6 && W.simStep(1 / 30, { dx: vx, dz: vz })) t += 1 / 30;
 out.crevasse = { mode: g.mode, cause: g.S.cause };
+out.crevasse.physical=g.physics.events.some(e=>e.type==='knockdown'&&e.reason==='crevasse');
 // 4. Crossing on the ladder
 reset(); W.teleport(cv.x - vx * (cv.w / 2 + 3), cv.z - vz * (cv.w / 2 + 3));
 let ladder = false; t = 0; while (t < 6 && W.simStep(1 / 30, { dx: vx, dz: vz })) { t += 1 / 30; ladder ||= g.P.onLadder; }

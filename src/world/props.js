@@ -9,6 +9,8 @@ import { placeMemorials } from './memorials.js';
 import { buildBaseCamp } from './baseCamp.js';
 import { PEAKS } from './geo.js';
 import { CampVisuals } from '../render/campVisuals.js';
+import { CrevasseField } from './crevasses.js';
+import { CrevasseVisuals } from '../render/crevasses.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -131,7 +133,6 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
       const y = H(x, z);
       add(poles, x, y + 0.7, z); add(flags, x, y + 1.32, z, r() * 6, 1, 1, 1, col);
     }
-    bootTrack(scene, field, route);
   }
 
   // ---------------- fixed ropes
@@ -166,13 +167,12 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
     for (const o of world.crevasses) if (Math.hypot(o.x - x, o.z - z) < (o.len + cv.len) / 2 + 5) ok = false;
     if (ok) world.crevasses.push(cv);
   }
-  const lipMat = new THREE.MeshStandardMaterial({ color: 0xa8d8f2, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const holeMat = new THREE.MeshBasicMaterial({ color: 0x041018, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  world.crevasseField = new CrevasseField(field, world.crevasses, seed);
+  world.crevasseVisuals = new CrevasseVisuals(scene, world.crevasseField, quality);
   for (const cv of world.crevasses) {
-    scene.add(ribbon(field, cv, cv.w + 1.8, 0.1, lipMat));
-    scene.add(ribbon(field, cv, cv.w, 0.18, holeMat));
     if (cv.ladder) ladder(field, cv, rungs);
   }
+  for(const c of CLIMBS)bootTrack(scene, field, routes[c.route], world.crevasseField);
 
   // ---------------- seracs
   const sg = new THREE.IcosahedronGeometry(1, 1), n2 = makeNoise2D(mulberry32(seed + 77)), sp = sg.attributes.position;
@@ -229,7 +229,7 @@ function peakTop(core, backdrop, pk) {
   return best;
 }
 
-function bootTrack(scene, field, route) {
+function bootTrack(scene, field, route, holes) {
   const pos = [], idx = []; let k = 0;
   for (let s = 0; s <= route.L; s += 3) {
     const p = route.at(s);
@@ -238,7 +238,9 @@ function bootTrack(scene, field, route) {
     k++;
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const cut=[];
+  for(let i=0;i<idx.length;i+=3)for(const p of holes.cutTriangle(idx.slice(i,i+3).map(k=>pos.slice(k*3,k*3+3))))cut.push(...p);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(cut, 3)); g.computeVertexNormals();
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x7f8b98, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
   mesh.renderOrder = 1; scene.add(mesh);
 }
@@ -258,33 +260,8 @@ function rope(scene, field, d) {
   return { name: d.name, pts, color: d.color, route: d.route };
 }
 
-function ribbon(field, cv, width, lift, mat) {
-  const pos = [], idx = [], steps = Math.ceil(cv.len / 2), vx = -cv.uz, vz = cv.ux;
-  for (let k = 0; k <= steps; k++) {
-    const u = (k / steps - 0.5) * cv.len, taper = 1 - Math.pow(Math.abs(k / steps - 0.5) * 2, 3) * 0.85;
-    for (const sg of [-1, 1]) {
-      const x = cv.x + cv.ux * u + vx * sg * width / 2 * taper, z = cv.z + cv.uz * u + vz * sg * width / 2 * taper;
-      pos.push(x, field.height(x, z) + lift, z);
-    }
-    if (k < steps) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2, a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, mat); mesh.receiveShadow = true; return mesh;
-}
-
 function ladder(field, cv, rungs) {
-  const vx = -cv.uz, vz = cv.ux, ext = cv.w / 2 + 1.3;
-  const A = new THREE.Vector3(cv.x - vx * ext, 0, cv.z - vz * ext); A.y = field.height(A.x, A.z) + 0.14;
-  const B = new THREE.Vector3(cv.x + vx * ext, 0, cv.z + vz * ext); B.y = field.height(B.x, B.z) + 0.14;
-  const dir = B.clone().sub(A), len = dir.length(); dir.normalize();
-  const side = new THREE.Vector3(cv.ux, 0, cv.uz);
-  const up = new THREE.Vector3().crossVectors(side, dir).normalize(); if (up.y < 0) up.negate();
-  const sideN = new THREE.Vector3().crossVectors(dir, up).normalize();
-  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, up, sideN));
-  for (const o of [-0.3, 0.3]) { const c = A.clone().add(B).multiplyScalar(0.5).addScaledVector(sideN, o); add(rungs, c.x, c.y, c.z, 0, len, 0.07, 0.05, null, q); }
-  for (let t = 0.15; t < len; t += 0.32) { const c = A.clone().addScaledVector(dir, t); add(rungs, c.x, c.y + 0.01, c.z, 0, 0.04, 0.04, 0.62, null, q); }
-  cv.ladderA = A; cv.ladderB = B;
+  for(const part of cv.ladderParts) add(rungs, part.center.x, part.center.y, part.center.z, 0, ...part.half.map(v=>v*2), null, part.rotation);
 }
 
 // The dead of the route (see memorials.js): a cairn with prayer flags, or a shrouded figure off the trail where the

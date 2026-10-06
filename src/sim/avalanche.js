@@ -45,11 +45,23 @@ export class Avalanche {
       if ((along/(this.length/2))**2+(across/(this.width/2))**2 < 1) this.h[k]=this.depth*(.9+.2*random());
     }
     this.initialVolume = this.volume(); this.escaped = 0;
+    this.sinks=new Float64Array(count);
+    if(this.crevasseField)for(let j=0;j<n;j++)for(let i=0;i<n;i++) {
+      const x=this.x0+i*this.cell,z=this.z0+j*this.cell,box={x0:x,x1:x+this.cell,z0:z,z1:z+this.cell};
+      const list=this.crevasseField.nearby(box);if(!list.length)continue;
+      const a=[x,0,z],b=[x+this.cell,0,z],c=[x,0,z+this.cell],d=[x+this.cell,0,z+this.cell];let outside=0;
+      for(const tri of [[a,c,b],[b,c,d]]) {
+        const cut=this.crevasseField.cutTriangle(tri,list);
+        for(let k=0;k<cut.length;k+=3){const [p,q,r]=cut.slice(k,k+3);outside+=Math.abs((q[0]-p[0])*(r[2]-p[2])-(q[2]-p[2])*(r[0]-p[0]))/2;}
+      }
+      this.sinks[j*n+i]=clamp(1-outside/(this.cell*this.cell),0,1);
+    }
     this.t = 0; this.quiet = 0; this.settled = false; this.accum = 0; this.maxSpeed = 0; this.maxWave = 4;
   }
 
   volume() { return this.h.reduce((a,b)=>a+b,0)*this.cell*this.cell; }
   sample(x,z) {
+    if(this.crevasseField?.at(x,z))return {depth:0,vx:0,vz:0};
     const fx=(x-this.x0)/this.cell-.5, fz=(z-this.z0)/this.cell-.5;
     if (fx<0 || fz<0 || fx>this.size-1 || fz>this.size-1) return { depth:0, vx:0, vz:0 };
     const i=Math.min(this.size-2,Math.floor(fx)), j=Math.min(this.size-2,Math.floor(fz)), u=fx-i,v=fz-j;
@@ -103,6 +115,10 @@ export class Avalanche {
       const gx=(B[right]-B[left])/((right-left||1)*this.cell),gz=(B[down]-B[up])/(((down-up)/n||1)*this.cell);
       dqx[k]-=this.gn[k]*H[k]*gx*dt; dqz[k]-=this.gn[k]*H[k]*gz*dt;
       H[k]=Math.max(0,H[k]+dh[k]); X[k]+=dqx[k]; Z[k]+=dqz[k];
+      if(this.sinks[k]>0) {
+        const fraction=1-Math.exp(-this.sinks[k]*dt*12),lost=H[k]*fraction;
+        H[k]-=lost;X[k]*=1-fraction;Z[k]*=1-fraction;this.escaped+=lost*this.cell*this.cell;
+      }
       if(H[k]<.001) { X[k]=Z[k]=0; continue; }
       const speed=Math.hypot(X[k],Z[k])/H[k];
       // Solve quadratic drag implicitly, so drag cannot reverse or overshoot the flow.

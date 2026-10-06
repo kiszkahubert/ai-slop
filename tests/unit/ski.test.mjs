@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { game } from '../../src/sim/game.js';
 import { toggleSkis, updateSki } from '../../src/sim/ski.js';
+import { CrevasseField } from '../../src/world/crevasses.js';
 
 // a plane falling away to the south (+z) at the given gradient
 function slopeWorld(grad) {
@@ -61,4 +62,21 @@ test('snowplough brakes to a stop, and the skis only come off when slow', () => 
   assert.ok(game.P.ski.speed < 1, `still at ${game.P.ski.speed}`);
   assert.equal(toggleSkis(), true);
   assert.equal(game.P.ski, null);
+});
+
+test('a ski crossing is ballistic: equal speed clears a narrow gap but tumbles into a wide one',()=>{
+  const outcomes=[];
+  for(const width of [1,8]) {
+    slopeWorld(0);game.field.cell=4;
+    game.world.crevasseField=new CrevasseField(game.field,[{x:0,z:0,ux:1,uz:0,len:40,w:width,ladder:false}]);
+    const route={pts:[{x:9999,z:9999}],nearestWithin:()=>null};
+    game.routes={main:route,lhotse:route,nuptse:route};game.camps=[];
+    game.physics={groundHeight:game.field.height,startFall:({velocity})=>{game.P.falling={reason:'crevasse',velocity};game.P.ski=null;}};
+    Object.assign(game.P,{x:0,z:-width/2-.2,y:6000,facing:SOUTH});toggleSkis();game.P.ski.u=12;
+    let airborne=false;
+    for(let i=0;i<90&&!game.P.falling;i++){updateSki(1/120,{dx:0,dz:0});airborne ||=!!game.P.ski?.air;}
+    outcomes.push({airborne,fell:!!game.P.falling,skis:!!game.P.ski,z:game.P.z});
+  }
+  assert.ok(outcomes.every(o=>o.airborne));assert.ok(outcomes[0].skis&&!outcomes[0].fell&&outcomes[0].z>.5);
+  assert.ok(outcomes[1].fell&&!outcomes[1].skis);game.physics=null;
 });

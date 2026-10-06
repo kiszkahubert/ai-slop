@@ -1,0 +1,12 @@
+[
+  {
+    "eval": "document.getElementById('gl').requestPointerLock=()=>Promise.resolve()"
+  },
+  {
+    "click": "#btnNew"
+  },
+  {
+    "script": "tests/crevasses.js",
+    "expect": "r.meshesFinite && r.degenerate === 0 && r.travelBounded && r.count === 90 && r.crossings.every(c=>c.ladder && c.crossed && !c.fell) && r.stepOff && r.saveKept && r.exitBlocked && r.resetSupported && r.swept && r.qualityFallKept && r.trapped && r.physiology && r.flightReset && r.flightTeleport && r.invulnerable && r.finite && r.cameraBelow && r.pauseKept && r.teleportCleared && r.snowOpen && r.snowEscaped && r.loaded && r.safeLegacy && r.autoStarted && r.autoReturned && r.released === 3 && r.stableResources && r.stateKept"
+  }
+]
