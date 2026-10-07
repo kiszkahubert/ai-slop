@@ -30,7 +30,8 @@ export const MACRO_SHADOW_PARS = `
     if ( uMacroRect.z == 0.0 ) return 1.0;
     vec2 uv = ( w.xz - uMacroRect.xy ) * uMacroRect.zw;
     if ( uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 ) return 1.0;
-    return texture2D( uMacroShadow, uv ).r;
+    vec2 edge = min(uv,1.0-uv)/uMacroRect.zw;
+    return mix(1.0,texture2D( uMacroShadow, uv ).r,smoothstep(0.0,128.0,min(edge.x,edge.y)));
   }`;
 
 /** Multiplies the first directional light (the sun) by the mountain shadow. */

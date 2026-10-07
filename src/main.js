@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
+import { createLandscapeField } from './world/landscape.js';
 import { loadRoutes, campsFor, CLIMBS } from './world/route.js';
 import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
@@ -62,7 +63,7 @@ const resize = () => {
 };
 addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing, rock;
+let env, terrain, backdrop, landscape, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing, rock;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -78,13 +79,14 @@ async function boot() {
   field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)), { pads: basePlan.pads, relief: basePlan.relief });
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
+  landscape = createLandscapeField(field, back);
   await step('Painting rock, snow and ice…');
   rock = await loadTerrainRock();
   const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy(), rock);
   layerSize = quality.textureSize;
   await step('Shading the relief…');
-  relief = createReliefTexture(field, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
-  const macroShadow = new MacroShadow(field, 32);
+  relief = createReliefTexture(landscape, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
+  const macroShadow = new MacroShadow(landscape, 32);
   SHARED.uMacroShadow.value = macroShadow.texture;
   await step('Building terrain chunks…');
   terrainMat = createTerrainMaterial({
@@ -93,8 +95,8 @@ async function boot() {
   });
   await step('Fixing ropes, ladders and camps…');
   game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy(), terrainMaterial: terrainMat });
-  terrain = new TerrainLOD(scene, terrainMat, field, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
-  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
+  terrain = new TerrainLOD(scene, terrainMat, landscape, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
+  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(landscape));
   await step('Preparing fall and snow physics…');
   await initPhysics();
   game.physics = new PhysicsScene(game, { die });
@@ -104,7 +106,7 @@ async function boot() {
   climber.group.userData.rtDynamic = true;
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
   postfx = setupPostProcessing(renderer, scene, camera, quality);
-  rayTracing = new RayTracingLighting(renderer, scene, camera, { field, back, world: game.world, terrainMaterial: terrainMat, sun: env.sun, quality: qualityName });
+  rayTracing = new RayTracingLighting(renderer, scene, camera, { field: landscape, back, world: game.world, terrainMaterial: terrainMat, sun: env.sun, quality: qualityName });
   // A shader/driver failure must leave ordinary rendering available.
   const shaderError = renderer.debug.onShaderError;
   renderer.debug.onShaderError = (...args) => {
@@ -218,7 +220,7 @@ function setQuality(name) {
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
   if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy(), rock); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
-    relief = createReliefTexture(game.field, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
+    relief = createReliefTexture(landscape, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
     opts.relief = relief.texture; opts.reliefRect = relief.rect;
   }
   updateTerrainMaterial(terrainMat, opts);
@@ -240,7 +242,7 @@ const api = {
   get avalancheView() { return avalancheView; },
   crevasseAt: (x,z) => game.world.crevasseField.at(x,z)?.id ?? null,
   querySupport: (position,maxDrop) => querySupport(game,position,maxDrop),
-  get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
+  get rig() { return rig; }, get terrain() { return terrain; }, get backdropTerrain() { return backdrop; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;
 

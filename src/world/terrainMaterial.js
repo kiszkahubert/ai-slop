@@ -218,7 +218,8 @@ const FRAG_COLOR = `
   float camD = length( vWPos - cameraPosition );
   // the relief map (Sobel on the elevation model) takes over from the coarse mesh normals in the distance
   vec2 ruv = ( vWPos.xz - uReliefRect.xy ) * uReliefRect.zw;
-  float inside = uReliefRect.z > 0.0 ? step( 0.0, ruv.x ) * step( 0.0, ruv.y ) * step( ruv.x, 1.0 ) * step( ruv.y, 1.0 ) : 0.0;
+  vec2 reliefEdge = min(ruv, 1.0-ruv) / max(uReliefRect.zw, vec2(1e-9));
+  float inside = uReliefRect.z > 0.0 ? smoothstep(0.0,64.0,min(reliefEdge.x,reliefEdge.y)) : 0.0;
   vec4 rel = mix( vec4( 0.5, 0.5, 1.0, 1.0 ), texture2D( uRelief, clamp( ruv, 0.0, 1.0 ) ), inside );
   vec3 nR = vec3( rel.r * 2.0 - 1.0, 0.0, rel.g * 2.0 - 1.0 ); nR.y = sqrt( max( 0.0, 1.0 - dot( nR.xz, nR.xz ) ) );
   vec3 nrm = normalize( mix( n0, nR, inside * smoothstep( uReliefFade.x, uReliefFade.y, camD ) ) );

@@ -4,6 +4,40 @@ This pass corrects terrain facing and restores direct-sun occlusion before addin
 surface, silhouette, atmosphere and foreground detail. The source Pléiades DEM,
 routes, camps, saves and expedition rules remain intact.
 
+## Detailed terrain and backdrop join
+
+The detailed terrain's rectangular edge previously exposed a dark curtain: the
+overlapping backdrop was lowered by 900 m, with unrelated height/normal sampling
+and a hard relief-map boundary. A separate landscape field now copies every
+climbing height and mask, and adds an exterior transition. The original field
+continues to drive walking, collision, exposure and saves.
+
+The transition is 320 m wide, with cubic Hermite height residuals and broad slopes
+sampled over 32 m (slope correction limited to ±0.25). Corners use distance to
+the nearest point of the core rectangle. The outer rectangle is aligned to the
+backdrop's 160 m grid: 4001 × 3081 samples at 4 m, within 4096-pixel texture limits.
+Backdrop geometry is clipped against it; adjoining chunks retain native spacing.
+All foreground LODs include the backdrop edge knots. Shared perimeter skirts are
+omitted and adjoining chunk skirts taper at their endpoints.
+
+Relief, AO, macro shadows, masks, RT height hierarchies and nearby RT snapshots use
+the same landscape field. Relief/AO fade over the outer 64 m; macro shadows and
+the core/backdrop RT cache selection fade over 128 m. Cache interpolation reuses
+the existing samplers and falls back to whichever cache has initialized. Quality
+changes dispose the old relief texture and rebuild from the joined field.
+
+`npm run test:landscape` checks exact preservation, native boundary chunks,
+quality disposal, GPU terrain intersections and cache blending. Unit tests cover
+every edge/corner and all seven foreground LODs. `npm run capture:landscape`
+captures the east-facing summit at 07:03/noon in all qualities and the other
+edges/corner at noon. Set `RT=1` for traced views, `HARDWARE=1` for actual GPU
+timings, `CHROMIUM` for a browser path, and `SHOTS` for output. `LANDSCAPE_ROOT`
+can point to an archived checkout for identical before/after fixtures. Images,
+renderer/timing/RT statistics and gameplay hashes are saved together.
+Set `FULL_CACHE=1` to warm the entire lighting atlas instead of only the viewed
+boundary. Existing distant RT lighting bands can still occur independently of
+the geometry join; the archived baseline captures distinguish these artifacts.
+
 ## Shading and materials
 
 Triplanar projection reconstruction now retains the signed base normal. Rotated

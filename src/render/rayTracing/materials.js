@@ -22,10 +22,23 @@ uniform vec4 uRtCoreRect,uRtBackRect;
 uniform sampler2D uRtCoreIrr,uRtCoreSun,uRtBackIrr,uRtBackSun,uRtLocal,uRtPosition,uRtNormal,uRtDynamicShadow;
 uniform mat4 uRtDynamicMatrix;
 ${OCT}
-vec4 rtCache(vec3 p){vec2 uv=(p.xz-uRtCoreRect.xy)*uRtCoreRect.zw;if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))return texture2D(uRtCoreIrr,uv);
-  uv=(p.xz-uRtBackRect.xy)*uRtBackRect.zw;if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))return texture2D(uRtBackIrr,uv);return vec4(0);}
-vec4 rtSunCache(vec3 p){vec2 uv=(p.xz-uRtCoreRect.xy)*uRtCoreRect.zw;if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))return texture2D(uRtCoreSun,uv);
-  uv=(p.xz-uRtBackRect.xy)*uRtBackRect.zw;return texture2D(uRtBackSun,clamp(uv,0.0,1.0));}
+float rtCoreWeight(vec2 uv){vec2 edge=min(uv,1.0-uv)/max(uRtCoreRect.zw,vec2(1e-9));return smoothstep(0.0,128.0,min(edge.x,edge.y));}
+vec4 rtCache(vec3 p){
+  vec2 uv=(p.xz-uRtCoreRect.xy)*uRtCoreRect.zw,backUv=(p.xz-uRtBackRect.xy)*uRtBackRect.zw;
+  vec4 b=vec4(0);float w=rtCoreWeight(uv);
+  if(w<1.0&&all(greaterThanEqual(backUv,vec2(0)))&&all(lessThanEqual(backUv,vec2(1))))b=texture2D(uRtBackIrr,backUv);
+  if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))return b;
+  vec4 c=texture2D(uRtCoreIrr,uv);
+  if(b.a<.001)return c;if(c.a<.001)return b;return mix(b,c,w);
+}
+vec4 rtSunCache(vec3 p){
+  vec2 uv=(p.xz-uRtCoreRect.xy)*uRtCoreRect.zw,backUv=(p.xz-uRtBackRect.xy)*uRtBackRect.zw;float w=rtCoreWeight(uv);
+  vec4 b=vec4(0);if(w<1.0)b=texture2D(uRtBackSun,clamp(backUv,0.0,1.0));
+  if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))return b;
+  vec4 c=texture2D(uRtCoreSun,uv);
+  if(dot(b.ba,vec2(1))<.00001)return c;if(dot(c.ba,vec2(1))<.00001)return b;
+  vec4 result=mix(b,c,w);result.ba=octEncode(normalize(mix(octDecode(b.ba),octDecode(c.ba),w)));return result;
+}
 float rtBlend(vec3 p){if(uRtEnabled<.5)return 0.0;return smoothstep(0.0,4.0,rtCache(p).a)*step(.00001,dot(rtSunCache(p).ba,vec2(1)));}
 vec4 rtLocalValue(vec3 p,vec3 n,out float weight){
   weight=0.0;if(uRtLocalReady<.5||length(p-uRtCamera)>=120.0)return vec4(0);
