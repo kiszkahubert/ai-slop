@@ -8,19 +8,29 @@ export class CameraRig {
     this.camera = camera; this.sway = 0; this.dist = 7; this.target = new THREE.Vector3();
     this.free = null;   // debug free camera: { pos: [x,y,z], look: [x,y,z] }
     this.pose = null;   // last camera pose as plain arrays, for the scenic flyby's opening blend
+    this.flyAim = new THREE.PerspectiveCamera(); this.forward = new THREE.Vector3();
   }
   update(dt, time, game, climber) {
     const { P, S, view } = game, cam = this.camera;
     if (game.flyby?.pose) {
       const p = game.flyby.pose;
       cam.position.set(p.pos[0], p.pos[1], p.pos[2]);
-      cam.rotation.set(0, 0, 0, 'YXZ');
-      cam.lookAt(p.look[0], p.look[1], p.look[2]);
-      if (p.roll) cam.rotateZ(p.roll);
-      if (cam.fov !== p.fov) { cam.fov = p.fov; cam.updateProjectionMatrix(); }
-      this.dist = 400;                      // distant focus so depth of field keeps the peaks sharp
-      this.pose = { pos: p.pos, look: p.look };
-      climber.group.visible = false;
+      const aim = this.flyAim;
+      aim.position.copy(cam.position); aim.lookAt(...p.look);
+      if (p.roll) aim.rotateZ(p.roll);
+      if (p.quaternion) cam.quaternion.fromArray(p.quaternion);
+      else if (p.snap && game.flyby.fade === 1) cam.quaternion.copy(aim.quaternion);
+      else {
+        const angle = cam.quaternion.angleTo(aim.quaternion);
+        cam.quaternion.slerp(aim.quaternion, Math.min(1 - Math.exp(-dt * 3), dt * .45 / Math.max(angle, 1e-9)));
+      }
+      const exact = game.flyby.restored || (p.snap && game.flyby.fade === 1);
+      const fov = exact ? p.fov : lerp(cam.fov, p.fov, 1 - Math.exp(-dt * 3));
+      if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
+      if (!game.flyby.restored) this.dist = 400;
+      cam.getWorldDirection(this.forward);
+      this.pose = { pos: [...p.pos], look: p.pos.map((v, i) => v + this.forward.getComponent(i) * 100) };
+      climber.group.visible = game.flyby.restored && !view.fp;
       return;
     }
     if (this.free) { cam.position.set(...this.free.pos); cam.lookAt(...this.free.look); climber.group.visible = true; return; }
@@ -40,7 +50,7 @@ export class CameraRig {
       cam.position.set(P.x, P.y + 1.65 + (P.moving ? Math.sin(P.phase * 2) * 0.04 : 0), P.z);
       cam.rotation.set(pitch, yaw, roll, 'YXZ');
       climber.group.visible = false;
-      this.pose = { pos: [P.x, cam.position.y, P.z], look: [P.x - fx0 * 50, cam.position.y + Math.sin(pitch) * 50, P.z - fz0 * 50] };
+      this.pose = { pos: [P.x, cam.position.y, P.z], look: [P.x + fx0 * Math.cos(pitch) * 50, cam.position.y + Math.sin(pitch) * 50, P.z + fz0 * Math.cos(pitch) * 50] };
       this.wasFalling=false;
       return;
     }

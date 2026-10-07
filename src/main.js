@@ -24,7 +24,7 @@ import { on } from './core/events.js';
 import { smoothstep } from './core/math.js';
 import { CameraRig } from './render/camera.js';
 import { game, newGame, restHours, placePlayer, setSpeedMul, die, refreshConditions } from './sim/game.js';
-import { updateFlyby, startFlyby, skipStop, stopFlyby } from './sim/flyby.js';
+import { updateFlyby, startFlyby, skipStop, stopFlyby, replayFlyby, flybyPreview } from './sim/flyby.js';
 import { PhysicsScene, initPhysics } from './sim/physics.js';
 import { AvalancheView } from './render/avalanche.js';
 import { querySupport } from './sim/surface.js';
@@ -160,8 +160,10 @@ function frame(now) {
   if (avalancheView.group) avalancheView.group.userData.rtDynamic = true;
   game.world.campVisuals.update(camera);
   game.world.crevasseVisuals.update(camera);
+  const viewerEnv = game.flyby?.env || game.env;
   game.env.sunEl = env.update(dt, {
-    time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
+    time: game.time, weather: game.weather, env: viewerEnv, player: game.P, camera,
+    cinematic: !!game.flyby && !game.flyby.restored,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
     labels: currentLabels(),
   });
@@ -169,14 +171,36 @@ function frame(now) {
   const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
   terrain.update(camera.position, 3, lodView);
   backdrop.update(camera.position, 2, lodView);
+  prepareFlyby(now, lodView);
   if ((game.mode === 'play' || game.mode === 'camp' || game.mode === 'paused') && !game.flyby) updateHUD(dt);
   updateAudio(dt);
   const tr = performance.now();
   const firstPerson = game.view.fp && !game.P.falling && !game.P.recovery;
   rayTracing.prepare(game.time);
-  postfx.render({ free: game.free, focus: firstPerson ? 30 : rig.dist });
+  postfx.render({ free: game.free, focus: game.flyby && !game.flyby.restored ? 400 : firstPerson ? 30 : rig.dist });
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
+}
+
+const flybyCamera = camera.clone();
+let lastFlybyPrepare = 0, flybyPrepareTurn = 0;
+on('flybyEnd', () => { terrain?.cancelPrepare(); backdrop?.cancelPrepare(); });
+function prepareFlyby(now, view) {
+  const f = game.flyby;
+  if (!f || now - lastFlybyPrepare < 15 || (f.fade < .99 && api.frameMs > 14)) return;
+  const pose = flybyPreview(6);
+  if (!pose) return;
+  lastFlybyPrepare = now;
+  flybyCamera.position.fromArray(pose.pos); flybyCamera.lookAt(...pose.look);
+  flybyCamera.fov = pose.fov; flybyCamera.aspect = camera.aspect; flybyCamera.updateProjectionMatrix();
+  const start = performance.now();
+  // Alternate jobs so a single frame never warms several expensive assets at once.
+  let built = 0;
+  if (flybyPrepareTurn++ % 3 === 2) built = game.world.campVisuals.prepare(flybyCamera);
+  else built = (flybyPrepareTurn % 3 === 1 ? terrain : backdrop).prepare(flybyCamera, view).built;
+  const elapsed = performance.now() - start;
+  f.prefetch.built += built; f.prefetch.ms += elapsed;
+  f.prefetch.maxMs = Math.max(f.prefetch.maxMs, elapsed); f.prefetch.jobs++;
 }
 
 /** Camp and summit name tags, rebuilt only when the camps or the world change (not every frame). */
@@ -249,7 +273,7 @@ const api = {
   crevasseAt: (x,z) => game.world.crevasseField.at(x,z)?.id ?? null,
   querySupport: (position,maxDrop) => querySupport(game,position,maxDrop),
   get rig() { return rig; }, get terrain() { return terrain; }, get backdropTerrain() { return backdrop; }, renderMs: 0, frameMs: 0,
-  startFlyby, skipStop, stopFlyby: (reason) => stopFlyby(reason), updateFlyby,
+  startFlyby, skipStop, stopFlyby: (reason) => stopFlyby(reason), updateFlyby, replayFlyby, flybyPreview,
 };
 window.__sim = api;
 

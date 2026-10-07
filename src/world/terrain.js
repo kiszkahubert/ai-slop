@@ -2,7 +2,7 @@
 // skirts hide cracks between neighbours at different levels.
 import * as THREE from 'three';
 import { TERRAIN } from '../config.js';
-import { buildCrevasseTerrain } from './crevasseTerrain.js';
+import { buildCrevasseTerrainJob } from './crevasseTerrain.js';
 import { TERRAIN_LAYER } from '../render/depthPrepass.js';
 
 export function axisSamples(start, end, step) {
@@ -25,6 +25,10 @@ const inside = (r, x, z) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1;
 // Compare each native vertex with the actual triangle split of a coarser mesh.
 // A single spike on a ridge must count even when it lies between coarse vertices.
 export function measureLodError(field, chunk, step) {
+  return drain(lodErrorJob(field,chunk,step));
+}
+function drain(job) { let result; do {result=job.next();} while(!result.done); return result.value; }
+function* lodErrorJob(field, chunk, step) {
   if(step===1)return 0;
   let error=0, zj=0;
   const [xs,zs]=meshAxes(field,chunk,step);
@@ -37,6 +41,7 @@ export function measureLodError(field, chunk, step) {
     const h00=field.heightAt(a,b),h10=field.heightAt(ix,b),h01=field.heightAt(a,jz),h11=field.heightAt(ix,jz);
     const coarse=u+v<=1?h00+(h10-h00)*u+(h01-h00)*v:h11+(h01-h11)*(1-u)+(h10-h11)*(1-v);
     error=Math.max(error,Math.abs(field.heightAt(i,j)-coarse));
+    if((i-chunk.i0)%64===63)yield;
   }
   return error;
 }
@@ -49,6 +54,8 @@ export class TerrainLOD {
   constructor(scene, material, field, opts) {
     this.scene = scene; this.mat = material; this.f = field; this.o = opts;
     this.chunks = [];
+    this.prepared = []; // bounded hidden meshes for a predicted flyby camera
+    this.preparing = null;
     this.frustum = new THREE.Frustum(); this.viewProjection = new THREE.Matrix4();
     const C = opts.chunkCells, ncx = Math.ceil((field.nx - 1) / C), ncz = Math.ceil((field.nz - 1) / C);
     for (let cj = 0; cj < ncz; cj++) for (let ci = 0; ci < ncx; ci++) {
@@ -74,8 +81,11 @@ export class TerrainLOD {
   }
 
   buildGeometry(ch, step) {
+    return drain(this.geometryJob(ch,step));
+  }
+  *geometryJob(ch, step) {
     if (ch.join) step = this.o.levels[0];
-    if(this.o.crevasses?.nearby(ch,8).length)return buildCrevasseTerrain(this.f,ch,step,this.o.crevasses);
+    if(this.o.crevasses?.nearby(ch,8).length)return yield* buildCrevasseTerrainJob(this.f,ch,step,this.o.crevasses);
     const f = this.f, [xs,zs]=meshAxes(f,ch,step),ni=xs.length,nj=zs.length, clip=this.o.clipInside;
     const normalField=this.o.normalField || f;
     const normalHeight=(x,z)=>normalField.height ? normalField.height(x,z) : normalField.heightAt(Math.round((x-normalField.x0)/normalField.cell),Math.round((z-normalField.z0)/normalField.cell));
@@ -97,12 +107,15 @@ export class TerrainLOD {
       gl[v] = glacier ? glacier[j * f.nx + i] / 255 : 0;
       rk[v] = rock ? rock[j * f.nx + i] / 255 : 0;
     };
-    for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) put(j * ni + i, xs[i], zs[j], 0);
+    for (let j = 0; j < nj; j++) {
+      for (let i = 0; i < ni; i++) { put(j * ni + i, xs[i], zs[j], 0); if(i%64===63)yield; }
+    }
     const idx = [];
     for (let j = 0; j < nj - 1; j++) for (let i = 0; i < ni - 1; i++) {
       if (clip && inside(clip,f.x0+(xs[i]+xs[i+1])*.5*f.cell,f.z0+(zs[j]+zs[j+1])*.5*f.cell)) continue;
       const a = j * ni + i, b = a + 1, c = a + ni, d = c + 1;
       idx.push(a, c, b, b, c, d);
+      if(i%64===63)yield;
     }
     const depth = step * f.cell * 1.5 + 20;
     const edges = [
@@ -121,6 +134,7 @@ export class TerrainLOD {
         if (pos[t1*3+1]!==pos[s1*3+1]) idx.push(t1,s0,s1,t1,s1,s0);
       }
       base += n;
+      yield;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -134,14 +148,72 @@ export class TerrainLOD {
     return g;
   }
 
-  setLevel(ch, lv) {
+  ensureLevel(ch, lv) {
     if (!ch.meshes[lv]) {
-      const m = new THREE.Mesh(this.buildGeometry(ch, this.o.levels[lv]), this.mat);
-      m.receiveShadow = !!this.o.shadows; m.matrixAutoUpdate = false; m.visible = false; m.layers.enable(TERRAIN_LAYER);
-      this.scene.add(m); ch.meshes[lv] = m;
+      const job=this.preparing;
+      const geometry=job?.kind==='geometry' && job.ch===ch && job.lv===lv ? drain(job.iterator) : this.buildGeometry(ch,this.o.levels[lv]);
+      if(job?.kind==='geometry' && job.ch===ch && job.lv===lv)this.preparing=null;
+      this.installGeometry(ch,lv,geometry);
     }
+    return ch.meshes[lv];
+  }
+  installGeometry(ch,lv,geometry) {
+    if(ch.meshes[lv]){geometry.dispose();return;}
+    const m=new THREE.Mesh(geometry,this.mat);
+    m.receiveShadow=!!this.o.shadows;m.matrixAutoUpdate=false;m.visible=false;m.layers.enable(TERRAIN_LAYER);
+    this.scene.add(m);ch.meshes[lv]=m;
+  }
+
+  setLevel(ch, lv) {
+    this.ensureLevel(ch, lv);
+    this.prepared = this.prepared.filter(p => p.ch !== ch || p.lv !== lv);
     if (ch.level >= 0 && ch.meshes[ch.level]) ch.meshes[ch.level].visible = false;
     ch.meshes[lv].visible = true; ch.level = lv;
+  }
+
+  /** Resume altitude-error/geometry jobs within a cooperative deadline, keeping future meshes hidden. */
+  prepare(camera, view, { maxMeshes = 1, timeMs = 1.5, maxCached = 8 } = {}) {
+    const start = performance.now();
+    camera.updateMatrixWorld(true);
+    this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.viewProjection);
+    this.focalLength = view.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const candidates = this.chunks.filter(ch => this.frustum.intersectsSphere(ch.bounds))
+      .sort((a, b) => a.bounds.center.distanceToSquared(camera.position) - b.bounds.center.distanceToSquared(camera.position));
+    let built = 0, cursor=0;
+    while(built<maxMeshes && performance.now()-start<timeMs) {
+      if(this.preparing) {
+        const job=this.preparing,result=job.iterator.next();
+        if(result.done) {
+          this.preparing=null;
+          if(job.kind==='error')job.ch.errors[job.lv]=result.value;
+          else {
+            this.installGeometry(job.ch,job.lv,result.value);
+            if(job.ch.level!==job.lv)this.prepared.push({ch:job.ch,lv:job.lv,until:performance.now()+8000});
+            built++;
+          }
+        }
+        continue;
+      }
+      const ch=candidates[cursor++];if(!ch)break;
+      const p=camera.position;
+      const distance=Math.hypot(Math.max(ch.x0-p.x,0,p.x-ch.x1),Math.max(ch.z0-p.z,0,p.z-ch.z1),Math.max(ch.mn-p.y,0,p.y-ch.mx)*.6);
+      let lv=this.desiredLevel(ch,camera.position);
+      while(lv>0) {
+        if(ch.errors[lv]===undefined){this.preparing={kind:'error',ch,lv,iterator:lodErrorJob(this.f,ch,this.o.levels[lv])};cursor--;break;}
+        if(ch.errors[lv]*this.focalLength/Math.max(4,distance)>view.pixelError)lv--;else break;
+      }
+      if(this.preparing)continue;
+      if(ch.meshes[lv] || lv>=ch.level)continue;
+      this.preparing={kind:'geometry',ch,lv,iterator:this.geometryJob(ch,this.o.levels[lv])};
+    }
+    while (this.prepared.length > maxCached) this.releasePrepared(this.prepared.shift());
+    return { built, ms: performance.now() - start, cached: this.prepared.length };
+  }
+  cancelPrepare() { this.preparing?.iterator.return(); this.preparing=null; }
+  releasePrepared({ ch, lv }) {
+    if (ch.level === lv || !ch.meshes[lv]) return;
+    this.scene.remove(ch.meshes[lv]); ch.meshes[lv].geometry.dispose(); ch.meshes[lv] = null;
   }
 
   desiredLevel(ch, p, view = null) {
@@ -155,6 +227,8 @@ export class TerrainLOD {
       if(this.frustum.intersectsSphere(ch.bounds)){
         const focal=this.focalLength??view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));
         const pixelError=level=>{
+          const job=this.preparing;
+          if(ch.errors[level]===undefined && job?.kind==='error' && job.ch===ch && job.lv===level){ch.errors[level]=drain(job.iterator);this.preparing=null;}
           ch.errors[level] ??= measureLodError(this.f,ch,this.o.levels[level]);
           return ch.errors[level]*focal/Math.max(4,d);
         };
@@ -168,6 +242,11 @@ export class TerrainLOD {
 
   /** returns the number of chunks still waiting for a finer mesh */
   update(p, budget = 3, view = null) {
+    const now = performance.now();
+    this.prepared = this.prepared.filter(item => {
+      if (now < item.until) return true;
+      this.releasePrepared(item); return false;
+    });
     if(view){view.camera.updateMatrixWorld(true);this.viewProjection.multiplyMatrices(view.camera.projectionMatrix,view.camera.matrixWorldInverse);this.frustum.setFromProjectionMatrix(this.viewProjection);
       this.focalLength=view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));}
     const todo = [];
@@ -181,7 +260,7 @@ export class TerrainLOD {
     // free detailed meshes that are no longer needed
     for (const ch of this.chunks) for (let lv = 0; lv < 2; lv++) {
       const m = ch.meshes[lv];
-      if (m && ch.level > lv + 1) { this.scene.remove(m); m.geometry.dispose(); ch.meshes[lv] = null; }
+      if (m && ch.level > lv + 1 && !this.prepared.some(item => item.ch === ch && item.lv === lv)) { this.scene.remove(m); m.geometry.dispose(); ch.meshes[lv] = null; }
     }
     return todo.length;
   }

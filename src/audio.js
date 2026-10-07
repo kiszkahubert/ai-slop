@@ -28,14 +28,16 @@ function start() {
 
 export function updateAudio(dt) {
   if (!audio) return;
-  const play = game.mode === 'play', w = game.env.wind, t = audio.ctx.currentTime, S = game.S;
-  audio.gain.gain.setTargetAtTime(play ? clamp(w / 140, 0.03, 0.5) * 0.5 : 0, t, 0.4);
+  const play = game.mode === 'play', flight = game.flyby && !game.flyby.restored;
+  const w = (game.flyby?.env || game.env).wind, t = audio.ctx.currentTime, S = game.S;
+  const fade = flight ? 1 - game.flyby.fade : 1;
+  audio.gain.gain.setTargetAtTime(play ? clamp(w / 140, 0.03, 0.5) * (flight ? .32 : .5) * fade : 0, t, .7);
   audio.filt.frequency.setTargetAtTime(250 + w * 6 + 120 * Math.sin(performance.now() / 900), t, 0.3);
-  const A=game.physics?.avalanche,dist=A?Math.hypot(game.P.x-A.source.x,game.P.z-A.source.z):0;
+  const A=game.physics?.avalanche,eye=flight?game.flyby.pose.pos:[game.P.x,game.P.y,game.P.z],dist=A?Math.hypot(eye[0]-A.source.x,eye[2]-A.source.z):0;
   const intensity=A&&!A.settled&&(play||game.mode==='dead')?clamp(A.maxSpeed/25,0,1)/(1+dist/200):0;
   audio.snowGain.gain.setTargetAtTime(intensity*.6,t,.2);
   audio.beep -= dt;
-  if (play && audio.beep <= 0 && ((S.o2on && (!o2Flowing(S) || S.tanks[0] < OXYGEN.lowBar)) || S.spo2 < 58)) {
+  if (play && !game.flyby && !game.free && audio.beep <= 0 && ((S.o2on && (!o2Flowing(S) || S.tanks[0] < OXYGEN.lowBar)) || S.spo2 < 58)) {
     audio.beep = 2;
     const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
     o.frequency.value = 880; g.gain.value = 0.05; o.connect(g).connect(audio.ctx.destination);

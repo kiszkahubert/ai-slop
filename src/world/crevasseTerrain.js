@@ -3,18 +3,25 @@ import * as THREE from 'three';
 import { bounds } from './crevasses.js';
 
 export function buildCrevasseTerrain(f,ch,step,holes) {
+  const job=buildCrevasseTerrainJob(f,ch,step,holes);let result;
+  do {result=job.next();} while(!result.done);
+  return result.value;
+}
+
+export function* buildCrevasseTerrainJob(f,ch,step,holes) {
   const leaves=[],horizontal=new Map(),vertical=new Map(),c=f.cell;
   const add=(map,key,value)=>{if(!map.has(key))map.set(key,new Set());map.get(key).add(value);};
-  const divide=(i,j,nx,nz)=>{
+  function* divide(i,j,nx,nz) {
     const box={x0:f.x0+i*c,x1:f.x0+(i+nx)*c,z0:f.z0+j*c,z1:f.z0+(j+nz)*c};
     if((nx>1 || nz>1) && holes.nearby(box,8).length) {
       const xs=nx>1?[Math.floor(nx/2),nx-Math.floor(nx/2)]:[nx],zs=nz>1?[Math.floor(nz/2),nz-Math.floor(nz/2)]:[nz];
-      let z=j;for(const dz of zs){let x=i;for(const dx of xs){divide(x,z,dx,dz);x+=dx;}z+=dz;}
+      let z=j;for(const dz of zs){let x=i;for(const dx of xs){yield* divide(x,z,dx,dz);x+=dx;}z+=dz;}
     } else {
       leaves.push({i,j,nx,nz});for(const x of [i,i+nx])for(const z of [j,j+nz]){add(horizontal,z,x);add(vertical,x,z);}
+      if(leaves.length%32===0)yield;
     }
-  };
-  for(let j=ch.j0;j<ch.j1;j+=step)for(let i=ch.i0;i<ch.i1;i+=step)divide(i,j,Math.min(step,ch.i1-i),Math.min(step,ch.j1-j));
+  }
+  for(let j=ch.j0;j<ch.j1;j+=step)for(let i=ch.i0;i<ch.i1;i+=step)yield* divide(i,j,Math.min(step,ch.i1-i),Math.min(step,ch.j1-j));
   const pos=[],normal=[],gl=[],rk=[];
   const point=(i,j)=>{const x=f.x0+i*c,z=f.z0+j*c;return [x,f.height(x,z),z];};
   const emit=(p,skirt=false)=>{
@@ -23,6 +30,7 @@ export function buildCrevasseTerrain(f,ch,step,holes) {
     gl.push(f.glacier?f.glacier[k]/255:1);rk.push(f.rock?f.rock[k]/255:0);
     if(skirt){normal.splice(normal.length-3,3,0,1,0);}
   };
+  let processed=0;
   for(const q of leaves) {
     const {i,j,nx,nz}=q,edge=[];
     const xs=(z)=>[...horizontal.get(z)].filter(x=>x>=i&&x<=i+nx).sort((a,b)=>a-b);
@@ -36,6 +44,7 @@ export function buildCrevasseTerrain(f,ch,step,holes) {
     // where an adaptive edge has extra vertices to stitch neighbouring cells.
     const triangles=edge.length===4 ? [[edge[0],edge[3],edge[1]],[edge[1],edge[3],edge[2]]] : edge.map((v,k)=>[center,edge[(k+1)%edge.length],v]);
     for(const triangle of triangles)for(const p of holes.cutTriangle(triangle,list))emit(p);
+    if(++processed%32===0)yield;
   }
   const skirt=(a,b)=>{
     if(holes.nearby(bounds([a,b]),.25).length)return;
@@ -44,9 +53,11 @@ export function buildCrevasseTerrain(f,ch,step,holes) {
   };
   for(const z of [ch.j0,ch.j1]) {
     const xs=[...horizontal.get(z)].sort((a,b)=>a-b);for(let i=0;i<xs.length-1;i++)skirt(point(xs[i],z),point(xs[i+1],z));
+    yield;
   }
   for(const x of [ch.i0,ch.i1]) {
     const zs=[...vertical.get(x)].sort((a,b)=>a-b);for(let j=0;j<zs.length-1;j++)skirt(point(x,zs[j]),point(x,zs[j+1]));
+    yield;
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));

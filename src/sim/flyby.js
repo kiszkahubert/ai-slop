@@ -1,230 +1,223 @@
-// Scenic flyby: a cinematic camera flight along the South Col route — from Base Camp, over the Khumbu
-// Icefall and up the Western Cwm, the Lhotse Face and the Southeast Ridge to the summit of Everest —
-// hovering briefly at every camp, landmark and viewpoint. Free viewing only: the climber stays where
-// they are, survival systems stay off and nothing is saved.
-import { TIME_SCALE } from '../config.js';
-import { clamp, lerp, smoothstep, wrapAngle, fmt } from '../core/math.js';
+// A camera-only tour. The climber, expedition progress and save never move with the camera.
+import { clamp, lerp, fmt } from '../core/math.js';
 import { emit, toast, on } from '../core/events.js';
-import { game, refreshConditions, setHour } from './game.js';
-import { LANDMARKS } from '../world/route.js';
+import { game, refreshConditions } from './game.js';
+import { conditionsAt } from './physiology.js';
 import { PEAKS } from '../world/geo.js';
+import { ease, mix3, distance3, makeTrack, trackPoint, travelTiming, travelProgress } from './flybyMotion.js';
 
-const STEP = 20;          // m between flight-path samples
-const CRUISE = 30;        // m/s along the path
-const BRAKE = 7;          // m/s² approaching a stop
-const ACCEL = 9;          // m/s² leaving a stop
-const ENTRY_T = 5;        // s to blend from wherever the camera was onto the flight path
-const SKIP_T = 3;         // s for a skipped approach
-const LOOK_AHEAD = 280;   // m of path to look at while cruising
-const LOOK_ALIGN = 220;   // m before a stop the gaze starts settling on it
-const ORBIT_W = (2 * Math.PI) / 55;   // rad/s of the slow hold orbit
-
-/** The stops, in route order. gaze: a named peak the camera admires while hovering (the panoramas). */
+const FADE_OUT = .65, BLACK = .45, FADE_IN = .85;
+const CUT_T = FADE_OUT + BLACK + FADE_IN;
+const CINEMATIC_HOUR = 6.1; // readable morning light, held within a warm 25-minute window
+const HIGHLIGHTS = new Set(['ebc', 'icefall_mid', 'c2', 'c3', 'c4', 'balcony', 'everest']);
+// kind, radius, height, sweep in degrees. Bearings are relative to the uphill route tangent.
 const STOPS = [
-  { tag: 'ebc', off: 20, name: 'Everest Base Camp', hold: 8,
-    text: 'A village of expedition tents on the Khumbu Glacier, 5,300 m. Six weeks of rotations begin here — every South Col climb starts on the red wands ahead, up the Icefall.' },
-  { tag: 'icefall_mid', name: 'The Khumbu Icefall', hold: 8,
-    text: LANDMARKS.icefall_mid },
-  { tag: 'icefall_top', name: 'Top of the Icefall', hold: 9, gaze: 'everest',
-    text: LANDMARKS.icefall_top },
-  { tag: 'c1', name: 'Camp 1', hold: 6,
-    text: 'Tents threaded between crevasses at the head of the Icefall. Most expeditions spend two nights here, letting the blood learn the altitude.' },
-  { tag: 'c2', name: 'Camp 2 · Advanced Base Camp', hold: 8, gaze: 'nuptse',
-    text: 'Home above the Icefall, under the wall of Nuptse. Babu Chiri Sherpa slept a night on the summit without oxygen, and fell into a crevasse near this camp in 2001.' },
-  { tag: 'bergschrund', name: 'The Bergschrund', hold: 6,
-    text: LANDMARKS.bergschrund },
-  { tag: 'c3', name: 'Camp 3 · Lhotse Face', hold: 7,
-    text: 'Shelves cut into 1,100 m of blue ice. From here on, climbers sleep on bottled oxygen.' },
-  { tag: 'yellowband', name: 'The Yellow Band', hold: 6,
-    text: LANDMARKS.yellowband },
-  { tag: 'geneva', name: 'The Geneva Spur', hold: 6,
-    text: LANDMARKS.geneva },
-  { tag: 'c4', name: 'Camp 4 · The South Col', hold: 8, gaze: 'everest',
-    text: 'The last camp, already inside the death zone. The summit push leaves here around midnight; the 1996 storm caught Yasuko Namba within a few hundred metres of these tents.' },
-  { tag: 'triangular', name: 'The Triangular Face', hold: 6,
-    text: LANDMARKS.triangular },
-  { tag: 'balcony', name: 'The Balcony · 8,400 m', hold: 7,
-    text: LANDMARKS.balcony },
-  { tag: 'southsummit', name: 'The South Summit · 8,749 m', hold: 6,
-    text: LANDMARKS.southsummit },
-  { tag: 'hillary', name: 'The Hillary Step · 8,790 m', hold: 6,
-    text: LANDMARKS.hillary },
-  { tag: 'everest', name: 'The Summit of Mount Everest', hold: 18, reveal: true,
-    text: '8,849 m — the highest point on Earth. From the South Col it is five to seven hours through the death zone, and the safe return is still ahead.' },
+  { tag: 'ebc', off: 20, name: 'Everest Base Camp', shot: ['arc', 260, 95, 28], speed: 32,
+    text: 'An expedition village on the Khumbu Glacier. Every South Col climb begins here, with weeks of acclimatization and rotations through the camps above.' },
+  { tag: 'icefall_mid', name: 'The Khumbu Icefall', shot: ['glide', 230, 110, 32], speed: 30,
+    text: 'A moving maze of seracs and deep crevasses. Ladders and fixed lines thread a fragile route through the glacier.' },
+  { tag: 'icefall_top', name: 'Top of the Icefall', shot: ['reveal', 320, 100, 24], speed: 28, gaze: 'everest',
+    text: 'The Western Cwm opens ahead, enclosed by Everest, Lhotse and Nuptse. Beyond the Icefall, the scale of the mountain becomes clear.' },
+  { tag: 'c1', name: 'Camp 1', shot: ['arc', 210, 80, -24], speed: 45,
+    text: 'Tents between crevasses at the head of the Icefall. Climbers pause here to acclimatize before crossing the Western Cwm.' },
+  { tag: 'c2', name: 'Camp 2 · Advanced Base Camp', shot: ['arc', 330, 110, 32], speed: 65, gaze: 'nuptse',
+    text: 'Home above the Icefall, beneath the immense wall of Nuptse. This sheltered camp is the staging point for the upper mountain.' },
+  { tag: 'bergschrund', name: 'The Bergschrund', shot: ['glide', 250, 100, -28], speed: 38,
+    text: 'The glacier pulls away from the Lhotse Face here. Above this great crack rises a wall of blue ice more than a kilometre high.' },
+  { tag: 'c3', name: 'Camp 3 · Lhotse Face', shot: ['reveal', 290, 130, 20], speed: 32,
+    text: 'Tiny tent platforms cut into the Lhotse Face. The camp clings to blue ice, with the Western Cwm far below.' },
+  { tag: 'yellowband', name: 'The Yellow Band', shot: ['arc', 270, 110, -25], speed: 35,
+    text: 'A pale band of rock interrupts the ice. Everest climbers traverse toward the Geneva Spur; the Lhotse route continues up the face.' },
+  { tag: 'geneva', name: 'The Geneva Spur', shot: ['reveal', 300, 110, 26], speed: 32,
+    text: 'A dark rock buttress guards the final approach to the South Col. The last camp lies beyond its crest.' },
+  { tag: 'c4', name: 'Camp 4 · The South Col', shot: ['arc', 390, 105, -26], speed: 40, gaze: 'everest',
+    text: 'The final camp, nearly eight kilometres above sea level. Summit teams leave this exposed saddle around midnight, climbing toward the Southeast Ridge.' },
+  { tag: 'triangular', name: 'The Triangular Face', shot: ['glide', 300, 125, 26], speed: 30,
+    text: 'A long, steep snow face above the South Col. In darkness, climbers follow its fixed lines toward the Balcony.' },
+  { tag: 'balcony', name: 'The Balcony · 8,400 m', shot: ['arc', 290, 100, -26], speed: 24,
+    text: 'A small resting place on the Southeast Ridge. Dawn often reaches climbers here, revealing the immense drop into the surrounding valleys.' },
+  { tag: 'southsummit', name: 'The South Summit · 8,749 m', shot: ['reveal', 340, 145, 22], speed: 20,
+    text: 'A summit before the summit. Ahead, a narrow corniced ridge leads toward the Hillary Step and the highest point on Earth.' },
+  { tag: 'hillary', name: 'The Hillary Step · 8,790 m', shot: ['glide', 250, 115, -20], speed: 18,
+    text: 'The final exposed passage below the summit. To the east, the Kangshung Face drops roughly three kilometres toward Tibet.' },
+  { tag: 'everest', name: 'The Summit of Mount Everest', shot: ['pullback', 330, 155, 16], speed: 16, hold: 22,
+    text: '8,849 metres above sea level. The route ends on this small crest, surrounded by Himalayan peaks and valleys reaching far into the distance.' },
 ];
 
-const stopS = (route, st) => route.s(st.tag) + (st.off || 0);
-const gazePoint = (id) => {
-  const p = PEAKS.find((q) => q.id === id);
-  return p ? [p.x, p.e, p.z] : null;
-};
-
-/** Flight path above the route: samples every STEP metres, heights smoothed over the terrain. */
-function buildPath(route) {
-  const field = game.field, n = Math.floor(route.L / STEP) + 3;
-  const xs = new Float64Array(n), ys = new Float64Array(n), zs = new Float64Array(n);
-  for (let k = 0; k < n; k++) {
-    const p = route.at(Math.min(k * STEP, route.L));
-    xs[k] = p.x; zs[k] = p.z;
-    const g = field.height(p.x, p.z);
-    ys[k] = g + 130 + 110 * smoothstep(6100, 8600, g);   // more clearance the higher we fly
+const subject = (stop) => [stop.at.x, stop.at.ground + 12, stop.at.z];
+function shotRaw(stop, u) {
+  const [kind, radius, height, sweep] = stop.shot, d = stop.direction;
+  const angle = Math.atan2(-d.dx, -d.dz) + .55 + sweep * Math.PI / 180 * (u - .5);
+  const r = kind === 'pullback' ? lerp(radius, 620, u) : radius;
+  const slide = kind === 'glide' ? lerp(-75, 75, u) : 0;
+  const pos = [stop.at.x + Math.sin(angle) * r + d.dz * slide,
+    stop.at.ground + height + (kind === 'reveal' ? u * 70 : kind === 'pullback' ? u * 75 : 0),
+    stop.at.z + Math.cos(angle) * r - d.dx * slide];
+  let look = subject(stop);
+  if (stop.gaze) {
+    const peak = PEAKS.find((p) => p.id === stop.gaze);
+    if (peak) look = mix3(look, [peak.x, peak.e, peak.z], ease((u - .28) / .72) * .82);
   }
-  for (let pass = 0; pass < 5; pass++) {
-    for (let k = 1; k < n - 1; k++) ys[k] = (ys[k - 1] + 2 * ys[k] + ys[k + 1]) / 4;
+  return { pos, look, fov: kind === 'pullback' ? lerp(56, 62, u) : 58, roll: 0 };
+}
+function buildStops(route, mode) {
+  return STOPS.filter((st) => mode !== 'highlights' || HIGHLIGHTS.has(st.tag)).map((st) => {
+    const s = st.tag === 'everest' ? route.L - 7 : route.s(st.tag) + (st.off || 0);
+    const p = st.tag === 'everest' ? route.pts.at(-1) : route.at(s);
+    const stop = { ...st, s, at: { x: p.x, z: p.z, ground: game.field.height(p.x, p.z) }, direction: route.at(s) };
+    stop.hold = Math.max(st.hold || 8, Math.ceil(2 + st.text.split(/\s+/).length / 2.7));
+    stop.lift = 0;
+    // Lift the entire authored shot smoothly, avoiding a reactive terrain clamp.
+    for (let k = 0; k <= 100; k++) {
+      const pose = shotRaw(stop, k / 100);
+      stop.lift = Math.max(stop.lift, game.field.height(pose.pos[0], pose.pos[2]) + 70 - pose.pos[1]);
+    }
+    return stop;
+  });
+}
+function shotPose(stop, u) { const pose = shotRaw(stop, u); pose.pos[1] += stop.lift; return pose; }
+function buildLeg(f, a, b) {
+  const from = shotPose(a, 1), to = shotPose(b, 0), span = b.s - a.s;
+  const count = Math.max(6, Math.ceil(span / 45));
+  const base = (s) => { const p = f.route.at(s), g = game.field.height(p.x, p.z); return [p.x, g + 150, p.z]; };
+  const start = base(a.s), end = base(b.s);
+  const points = Array.from({ length: count + 1 }, (_, i) => {
+    const u = i / count, p = base(lerp(a.s, b.s, u));
+    const left = 1 - ease(Math.min(1, u * span / Math.min(550, span / 2)));
+    const right = 1 - ease(Math.min(1, (1 - u) * span / Math.min(550, span / 2)));
+    return p.map((v, k) => v + (from.pos[k] - start[k]) * left + (to.pos[k] - end[k]) * right);
+  });
+  for (let pass = 0; pass < 3; pass++) {
+    const old = points.map((p) => [...p]);
+    for (let i = 1; i < count; i++) for (const k of [0, 2]) points[i][k] = (old[i - 1][k] + 2 * old[i][k] + old[i + 1][k]) / 4;
   }
-  return { xs, ys, zs, n };
+  const track = makeTrack(points, game.field);
+  const timing = travelTiming(track.length, b.speed * (f.mode === 'highlights' ? 2.5 : 1.5));
+  return { track, timing, from, to, a, b };
 }
-
-/** Catmull–Rom interpolated position on the flight path at distance s. */
-function pathPoint(path, s) {
-  const f = clamp(s / STEP, 0, path.n - 2), i = Math.min(path.n - 2, Math.floor(f)), t = f - i;
-  const j = (a) => clamp(i + a, 0, path.n - 1);
-  const cr = (p0, p1, p2, p3) =>
-    0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
-  return {
-    x: cr(path.xs[j(-1)], path.xs[j(0)], path.xs[j(1)], path.xs[j(2)]),
-    y: cr(path.ys[j(-1)], path.ys[j(0)], path.ys[j(1)], path.ys[j(2)]),
-    z: cr(path.zs[j(-1)], path.zs[j(0)], path.zs[j(1)], path.zs[j(2)]),
-  };
+function legPose(leg, t) {
+  const u = travelProgress(t, leg.timing), pos = trackPoint(leg.track, u);
+  const ahead = trackPoint(leg.track, Math.min(1, u + 180 / leg.track.length));
+  const behind = trackPoint(leg.track, Math.max(0, u - 30 / leg.track.length));
+  const direction = ahead.map((v, i) => v - behind[i]), len = Math.hypot(...direction) || 1;
+  const forward = pos.map((v, i) => v + direction[i] / len * 300);
+  const depart = ease(u * leg.track.length / 300), arrive = ease((1 - u) * leg.track.length / 400);
+  let look = mix3(mix3(leg.from.look, forward, depart), leg.to.look, 1 - arrive);
+  if (distance3(pos, look) < 30) look = forward;
+  return { pos, look, fov: lerp(lerp(leg.from.fov, 64, depart), leg.to.fov, 1 - arrive), roll: 0 };
 }
-
-// ---------------- flight state machine
-export function startFlyby(from = 0) {
+function cameraOrigin() {
+  const rig = game.rig, P = game.P;
+  const pos = rig ? rig.camera.position.toArray() : [P.x, P.y + 14, P.z];
+  const direction = rig ? rig.camera.getWorldDirection(rig.forward).toArray() : [0, 0, -1];
+  return { pos, look: pos.map((v, i) => v + direction[i] * 100), fov: rig?.camera.fov ?? 62, roll: 0,
+    quaternion: rig?.camera.quaternion.toArray() };
+}
+export function startFlyby(from = 0, mode = 'full') {
   if (game.flyby) return true;
   if (!game.free) { toast('The scenic flyby is part of free viewing.', 'warn', 3); return false; }
   if (game.P.falling || game.P.recovery || game.P.ski?.air) { toast('Return to supported ground before taking off.', 'warn', 3); return false; }
-  const route = game.routes.main;
-  const stops = STOPS.map((st) => {
-    const p = st.tag === 'everest' ? route.pts.at(-1) : route.at(stopS(route, st));
-    return { ...st, s: st.tag === 'everest' ? route.L - 7 : stopS(route, st), at: { x: p.x, z: p.z, ground: game.field.height(p.x, p.z) } };
-  });
-  const path = buildPath(route);
-  const i = clamp(from, 0, stops.length - 1);
-  const rigPose = game.rig?.pose;
-  const P = game.P;
-  const origin = rigPose ? { pos: [...rigPose.pos], look: [...rigPose.look] }
-    : { pos: [P.x, P.y + 14, P.z], look: [stops[0].at.x, stops[0].at.ground + 60, stops[0].at.z] };
-  const saved = { time: game.time, clear: !!game.weather.clear };
-  game.weather.clear = true;      // golden-hour light for the flight; both are restored on landing
-  setHour(5.4);
-  refreshConditions();
-  game.flyby = {
-    route, stops, path, origin, saved, i, s: stops[i].s, speed: 6,
-    phase: 'entry', t: 0, roll: 0, lastYaw: null, visited: [], pose: null, entryT: ENTRY_T,
-  };
-  updateFlyby(0);
-  emit('flybyStart', stops.length);
+  mode = mode === 'highlights' ? mode : 'full';
+  const route = game.routes.main, stops = buildStops(route, mode), origin = cameraOrigin();
+  const f = game.flyby = { route, stops, mode, origin, saved: { time: game.time, clear: !!game.weather.clear,
+    camera: origin, dist: game.rig?.dist ?? game.view.dist },
+    i: Number.isFinite(from) ? clamp(Math.floor(from), 0, stops.length - 1) : 0, phase: 'cut', t: 0, elapsed: 0, fade: 0,
+    visited: [], pose: origin, legs: [], switched: false, restored: false, env: null, prefetch: { built: 0, ms: 0, maxMs: 0, jobs: 0 } };
+  for (let i = 1; i < stops.length; i++) f.legs[i] = buildLeg(f, stops[i - 1], stops[i]);
+  f.duration = CUT_T + stops.reduce((n, s) => n + s.hold, 0) + f.legs.reduce((n, l) => n + l.timing.duration, 0);
+  emit('flybyStart', stops.length); emit('flybyFinished', false);
   return true;
 }
-
+function caption(f) {
+  const stop = f.stops[f.i];
+  emit('flybyCaption', { kicker: `${f.mode === 'highlights' ? 'Highlights' : 'Full route'} · Stop ${f.i + 1} of ${f.stops.length} · ${fmt(stop.at.ground)} m`, title: stop.name, text: stop.text });
+}
+function beginHold(f) {
+  f.phase = 'hold'; f.t = 0;
+  if (!f.visited.includes(f.stops[f.i].tag)) f.visited.push(f.stops[f.i].tag);
+  caption(f);
+}
+function cutTo(f, index) {
+  f.i = index; f.phase = 'cut'; f.t = 0; f.switched = false;
+  emit('flybyCaption', null); emit('flybyFinished', false);
+}
+export function skipStop() {
+  const f = game.flyby;
+  if (!f || f.phase === 'return') return;
+  if (f.i >= f.stops.length - 1) { stopFlyby('cancelled'); return; }
+  cutTo(f, f.i + 1);
+}
+export function replayFlyby() {
+  const f = game.flyby;
+  if (!f || f.phase === 'return') return;
+  f.visited = []; f.elapsed = 0; cutTo(f, 0);
+}
+function restore(f) {
+  game.time = f.saved.time; game.weather.clear = f.saved.clear;
+  refreshConditions(); f.restored = true; f.env = null;
+  f.pose = { ...f.saved.camera, pos: [...f.saved.camera.pos], look: [...f.saved.camera.look] };
+  if (game.rig) {
+    game.rig.dist = f.saved.dist;
+    game.rig.camera.fov = f.saved.camera.fov; game.rig.camera.updateProjectionMatrix();
+  }
+}
+function finishReturn(f) {
+  game.flyby = null; emit('flybyFade', 0); emit('flybyEnd', f.reason, f.visited.length);
+}
 export function stopFlyby(reason = 'cancelled') {
   const f = game.flyby;
   if (!f) return;
-  game.flyby = null;
-  game.time = f.saved.time; game.weather.clear = f.saved.clear;
-  refreshConditions();
-  emit('flybyEnd', reason, f.visited.length);
-  if (reason === 'complete') toast('Flyby complete — the summit of Everest. Press T to teleport, or keep exploring.', 'good', 6);
-  else if (reason === 'cancelled') toast('Flyby ended — press T to teleport, or keep exploring.', 'info', 4);
+  if (reason === 'teleport' || game.mode !== 'play') { f.reason = reason; restore(f); finishReturn(f); return; }
+  if (f.phase === 'return') return;
+  f.phase = 'return'; f.t = 0; f.switched = false; f.reason = reason;
+  emit('flybyCaption', null); emit('flybyFinished', false);
 }
-
-/** Shift or Space: skip a stop — leave the current hover, or fly past the stop we are approaching. */
-export function skipStop() {
-  const f = game.flyby;
-  if (!f) return;
-  const j = f.i + 1;
-  if (j >= f.stops.length) { stopFlyby('complete'); return; }
-  f.origin = { pos: [...f.pose.pos], look: [...f.pose.look] };
-  f.i = j; f.s = Math.max(0, f.stops[j].s - 260); f.speed = CRUISE * 0.8;
-  f.phase = 'entry'; f.t = 0; f.entryT = SKIP_T; f.lastYaw = null;
-  emit('flybyCaption', null);
-}
-
-const lookBlend = (remaining) => 1 - smoothstep(0, LOOK_ALIGN, remaining);   // 0 far away, 1 settled on the stop
-
 export function updateFlyby(dt) {
   const f = game.flyby;
   if (!f) return;
   f.t += dt;
-  game.time += (dt * TIME_SCALE) / 3600;   // the light keeps moving at 1× while we fly
-  const path = f.path, stop = f.stops[f.i], pose = { fov: 62, roll: 0 };
-
-  if (f.phase === 'entry') {
-    const blend = smoothstep(0, 1, Math.min(1, f.t / f.entryT)), from = f.origin;
-    f.speed = Math.min(f.speed + ACCEL * dt, CRUISE);
-    f.s = Math.min(f.s + f.speed * dt, stop.s);
-    const to = pathPoint(path, Math.min(f.s + Math.max(f.speed * 2, 40), stop.s));
-    const toLook = pathPoint(path, Math.min(f.s + LOOK_AHEAD, stop.s));
-    pose.pos = [lerp(from.pos[0], to.x, blend), lerp(from.pos[1], to.y, blend), lerp(from.pos[2], to.z, blend)];
-    pose.look = [lerp(from.look[0], toLook.x, blend), lerp(from.look[1], toLook.y, blend), lerp(from.look[2], toLook.z, blend)];
-    pose.fov = lerp(55, 66, blend);
-    if (f.t >= f.entryT) { f.phase = 'cruise'; f.t = 0; }
-  } else if (f.phase === 'cruise') {
-    const remaining = Math.max(0, stop.s - f.s);
-    f.speed = Math.min(f.speed + ACCEL * dt, CRUISE, Math.sqrt(2 * BRAKE * remaining));
-    f.s += f.speed * dt;
-    const here = pathPoint(path, f.s);
-    const ahead = pathPoint(path, Math.min(f.s + Math.max(LOOK_AHEAD * (1 - lookBlend(remaining)), 30), f.route.L - 1));
-    const target = stop.gaze ? gazePoint(stop.gaze) : [stop.at.x, stop.at.ground + 8, stop.at.z];
-    const k = lookBlend(remaining);
-    pose.pos = [here.x, here.y, here.z];
-    pose.look = [lerp(ahead.x, target[0], k), lerp(ahead.y, target[1], k), lerp(ahead.z, target[2], k)];
-    pose.fov = lerp(66, 55, k);
-    // banking: roll gently into the path's turns
-    const yaw = Math.atan2(-(pose.look[0] - pose.pos[0]), -(pose.look[2] - pose.pos[2]));
-    if (f.lastYaw !== null && dt > 0) f.roll += (clamp(-wrapAngle(yaw - f.lastYaw) / dt * 0.55, -0.09, 0.09) - f.roll) * Math.min(1, dt * 2.5);
-    f.lastYaw = yaw;
-    pose.roll = f.roll;
-    if (remaining < 1) beginHold(f, stop);
+  if (!f.restored && f.phase !== 'finished') f.elapsed += dt;
+  if (f.phase === 'cut' || f.phase === 'return') {
+    f.fade = f.t < FADE_OUT ? Math.max(f.fade, ease(f.t / FADE_OUT)) : f.t < FADE_OUT + BLACK ? 1 : 1 - ease((f.t - FADE_OUT - BLACK) / FADE_IN);
+    if (f.t >= FADE_OUT && !f.switched) {
+      f.switched = true;
+      if (f.phase === 'return') restore(f);
+      else {
+        game.weather.clear = true;
+        game.time = Math.floor(f.saved.time / 24) * 24 + CINEMATIC_HOUR;
+        f.pose = shotPose(f.stops[f.i], 0); f.pose.snap = true;
+      }
+    }
+    if (f.t >= CUT_T) {
+      f.fade = 0;
+      if (f.phase === 'return') { finishReturn(f); return; }
+      f.pose = shotPose(f.stops[f.i], 0); beginHold(f);
+    }
   } else if (f.phase === 'hold') {
-    const o = f.orbit, k = 1 - Math.pow(1 - Math.min(1, f.t / stop.hold), 3);   // ease-out expansion
-    const a = o.a0 + o.omega * f.t, r = lerp(o.r0, o.radius, k), h = lerp(o.h0, o.height, k);
-    const x = o.cx + Math.sin(a) * r, z = o.cz + Math.cos(a) * r;
-    const target = stop.gaze ? gazePoint(stop.gaze) : [stop.at.x, stop.at.ground + 8, stop.at.z];
-    pose.pos = [x, Math.max(o.cy + h, game.field.height(x, z) + 45), z];
-    pose.look = target;
-    pose.fov = 55;
-    if (f.t >= stop.hold) { endHold(f, stop); if (!game.flyby) return; }
+    const stop = f.stops[f.i];
+    f.pose = shotPose(stop, ease(f.t / stop.hold));
+    if (f.t >= stop.hold) {
+      if (f.i === f.stops.length - 1) { f.phase = 'finished'; f.t = 0; emit('flybyFinished', true); }
+      else { f.i++; f.phase = 'travel'; f.t = 0; emit('flybyCaption', null); }
+    }
+  } else if (f.phase === 'travel') {
+    const leg = f.legs[f.i]; f.pose = legPose(leg, f.t);
+    if (f.t >= leg.timing.duration) { f.pose = shotPose(f.stops[f.i], 0); beginHold(f); }
   }
-  pose.pos[1] = Math.max(pose.pos[1], game.field.height(pose.pos[0], pose.pos[2]) + 32);
-  f.pose = pose;
+  if (f.switched && !f.restored) {
+    game.time = Math.floor(f.saved.time / 24) * 24 + CINEMATIC_HOUR + Math.min(25 / 60, f.elapsed / 3600 * 2);
+    const p = f.pose.pos;
+    f.env = conditionsAt(game, p[0], p[2], p[1], game.time, false, p[1] > 7900 ? 1.15 : 1);
+  }
+  emit('flybyFade', f.fade);
 }
-
-/** Enter the hover: an orbit that starts exactly where the camera is, so the handover is seamless. */
-function beginHold(f, stop) {
-  const cx = stop.at.x, cz = stop.at.z, cy = stop.at.ground + 10;
-  const dx = f.pose.pos[0] - cx, dy = f.pose.pos[1] - cy, dz = f.pose.pos[2] - cz;
-  const a0 = Math.atan2(dx, dz), r0 = Math.max(20, Math.hypot(dx, dz));
-  const dir = f.route.at(stop.s), tangent = (dx * dir.dx + dz * dir.dz) >= 0 ? 1 : -1;
-  f.orbit = {
-    cx, cy, cz, a0, r0, h0: Math.max(30, dy), omega: tangent * ORBIT_W,
-    radius: stop.reveal ? 320 : 140, height: stop.reveal ? 260 : 120,
-  };
-  f.phase = 'hold'; f.t = 0; f.roll = 0; f.lastYaw = null;
-  f.visited.push(stop.tag);
-  emit('flybyCaption', {
-    index: f.visited.length, count: f.stops.length,
-    kicker: stop.reveal ? `${fmt(stop.at.ground)} m` : `Stop ${f.visited.length} of ${f.stops.length} · ${fmt(stop.at.ground)} m`,
-    title: stop.name,
-    text: stop.text,
-  });
+/** Pure future-pose lookup for bounded terrain/camp preparation. */
+export function flybyPreview(seconds = 5) {
+  const f = game.flyby;
+  if (!f || f.restored || f.phase === 'return' || f.phase === 'finished') return null;
+  if (f.phase === 'travel') return legPose(f.legs[f.i], f.t + seconds);
+  if (f.phase === 'hold' && f.stops[f.i].hold - f.t < seconds && f.legs[f.i + 1]) return legPose(f.legs[f.i + 1], seconds - (f.stops[f.i].hold - f.t));
+  return shotPose(f.stops[f.i], ease((f.phase === 'hold' ? f.t + seconds : 0) / f.stops[f.i].hold));
 }
-
-/** Leave the hover: remember where the orbit ended, then blend back onto the flight path. */
-function endHold(f, stop) {
-  if (f.i >= f.stops.length - 1) { stopFlyby('complete'); return; }
-  const o = f.orbit, a = o.a0 + o.omega * stop.hold;
-  const ex = o.cx + Math.sin(a) * o.radius, ez = o.cz + Math.cos(a) * o.radius;
-  f.origin = {
-    pos: [ex, Math.max(o.cy + o.height, game.field.height(ex, ez) + 45), ez],
-    look: [...f.pose.look],
-  };
-  f.i++; f.s = stop.s + 30; f.speed = 14;
-  f.phase = 'entry'; f.t = 0; f.entryT = ENTRY_T; f.lastYaw = null;
-  emit('flybyCaption', null);
-}
-
-/** True while a flyby owns the camera. */
 export const flying = () => !!game.flyby;
-
 on('teleported', () => stopFlyby('teleport'));

@@ -67,10 +67,19 @@ Press **T** at any time to reopen the panel. It
 also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
 
 The same panel offers a **scenic flyby**: a cinematic camera flight along the South Col route, from Base Camp over the
-Khumbu Icefall and the Western Cwm, up the Lhotse Face and along the Southeast Ridge to the summit of Everest — about
-eight minutes, pausing to hover at every camp, landmark and viewpoint, with letterboxed captions telling what each
-place is. It is flown in sunrise light (your time of day and weather are restored when it lands); **Shift** skips to
-the next stop, **Esc** or any movement key ends the flight.
+Khumbu Icefall and the Western Cwm, up the Lhotse Face and along the Southeast Ridge to the summit of Everest,
+pausing at every camp, landmark and viewpoint, with letterboxed captions. Choose **Full route** (15 stops) or
+**Highlights** (7 stops). Camps have oblique arcs, the Icefall and ridge have lateral glides, the Lhotse Face has
+upward reveals, and the summit has a slow pullback. Travel follows a terrain-cleared camera path with gradual
+acceleration and braking; skips and large relocations happen under a brief fade.
+Warm morning light advances slowly, with wind and exposure following the viewer. The summit panorama stays open
+with **Replay tour** and **Return to exploring** controls. **Shift** or **Space** skips a stop; **Esc** or a movement
+key returns through a fade, restoring the original time, weather and camera lens. The climber and save stay put.
+Upcoming terrain meshes and camp detail are prepared incrementally with a bounded cache and frame-time guard.
+Terrain error checks and geometry generation yield between batches, with a 1.5 ms scheduling target and at most
+eight spare meshes per terrain layer. Preparation pauses when the preceding frame is busy; the debug flyby state
+reports completed builds, job count, total preparation time and the longest preparation job.
+Run `npm run test:flyby` for the full-route/highlights motion, replay, clearance and restoration regressions.
 
 Survival systems are off in free viewing: no hypoxia, cold, natural slips or crevasse deaths. Manual physics experiments
 still move the body, with injuries and suffocation disabled. Nothing is saved, so the expedition

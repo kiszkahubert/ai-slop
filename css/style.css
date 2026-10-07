@@ -168,7 +168,7 @@ body[data-screen="scrPause"] #toasts { display: none; }
 #flyby .barBot { bottom: 0; }
 #flyby.active .lb { height: 7.5vh; }
 #flybyCap { position: absolute; left: 50%; bottom: calc(7.5vh + 30px); transform: translateX(-50%); text-align: center;
-  max-width: min(760px, 92vw); opacity: 0; transition: opacity .8s; text-shadow: 0 1px 8px rgba(0,0,0,.95), 0 0 24px rgba(0,0,0,.6); }
+  width: min(760px, 90vw); opacity: 0; transition: opacity .8s; text-shadow: 0 1px 8px rgba(0,0,0,.95), 0 0 24px rgba(0,0,0,.6); }
 #flybyCap.shown { opacity: 1; }
 #flybyKicker { font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: #b9c8d8; }
 #flybyTitle { font-size: 26px; font-weight: 700; margin-top: 2px; }
@@ -178,3 +178,14 @@ body[data-screen="scrPause"] #toasts { display: none; }
 #flybyHint kbd { font: 11px ui-monospace, monospace; background: rgba(255,255,255,0.12); border: 1px solid var(--line);
   border-radius: 4px; padding: 0 5px; color: #e8eef5; }
 #flyby.active #flybyHint { opacity: 0.85; }
+#flybyControls { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex;
+  gap: 8px; justify-content: center; width: max-content; max-width: 96vw; pointer-events: auto; }
+#flybyControls button { font-size: 12px; padding: 5px 12px; background: #111820; }
+#flybyFade { position: fixed; inset: 0; z-index: 30; background: #000; opacity: 0; pointer-events: none; }
+@media (max-width: 600px) {
+  #flybyTitle { font-size: 21px; }
+  #flybyText { font-size: 13px; }
+  #flybyCap { bottom: calc(7.5vh + 18px); }
+  #flybyControls { bottom: 5px; }
+  #flybyControls button { font-size: 11px; padding: 4px 8px; }
+}

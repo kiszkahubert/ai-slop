@@ -12,7 +12,8 @@ const FLYBY_MOVE = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDow
 
 export function initInput({ onDebugKey } = {}) {
   addEventListener('keydown', (e) => {
-    if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
+    if (game.flyby && e.target?.closest?.('#flybyControls') && ['Space', 'Enter', 'Tab'].includes(e.code)) return;
+    if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code) || (e.code === 'Tab' && !game.flyby)) e.preventDefault();
     if (e.repeat) return;
     keys.add(e.code);
     if (e.code === 'Escape') { escapePressed(); return; }
@@ -42,7 +43,7 @@ export function initInput({ onDebugKey } = {}) {
   addEventListener('keyup', (e) => keys.delete(e.code));
   addEventListener('blur', () => keys.clear());
   addEventListener('mousemove', (e) => {
-    if (!game.locked || game.mode !== 'play') return;
+    if (!game.locked || game.mode !== 'play' || game.flyby) return;
     game.view.yaw -= e.movementX * 0.0022;
     game.view.pitch = clamp(game.view.pitch - e.movementY * 0.0022, -1.4, 1.35);
   });
