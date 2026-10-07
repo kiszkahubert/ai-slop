@@ -66,6 +66,12 @@ South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or
 Press **T** at any time to reopen the panel. It
 also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
 
+The same panel offers a **scenic flyby**: a cinematic camera flight along the South Col route, from Base Camp over the
+Khumbu Icefall and the Western Cwm, up the Lhotse Face and along the Southeast Ridge to the summit of Everest — about
+eight minutes, pausing to hover at every camp, landmark and viewpoint, with letterboxed captions telling what each
+place is. It is flown in sunrise light (your time of day and weather are restored when it lands); **Shift** skips to
+the next stop, **Esc** or any movement key ends the flight.
+
 Survival systems are off in free viewing: no hypoxia, cold, natural slips or crevasse deaths. Manual physics experiments
 still move the body, with injuries and suffocation disabled. Nothing is saved, so the expedition
 you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.

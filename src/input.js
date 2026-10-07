@@ -3,10 +3,12 @@ import { clamp } from './core/math.js';
 import { emit } from './core/events.js';
 import { game, toggleO2, setFlow } from './sim/game.js';
 import { interact, startAutopilot, stopAutopilot } from './sim/player.js';
+import { skipStop, stopFlyby } from './sim/flyby.js';
 import { toggleSkis } from './sim/ski.js';
 import { escapePressed } from './ui/screens.js';
 
 export const keys = new Set();
+const FLYBY_MOVE = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 export function initInput({ onDebugKey } = {}) {
   addEventListener('keydown', (e) => {
@@ -15,6 +17,11 @@ export function initInput({ onDebugKey } = {}) {
     keys.add(e.code);
     if (e.code === 'Escape') { escapePressed(); return; }
     if (game.mode !== 'play') return;
+    if (game.flyby) {                     // cinematic flight: any input leaves it, Shift/Space skips a stop
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') skipStop();
+      else if (FLYBY_MOVE.has(e.code) || e.code === 'KeyE' || e.code === 'KeyF') stopFlyby('cancelled');
+      return;
+    }
     switch (e.code) {
       case 'KeyE': interact(); break;
       case 'KeyO': toggleO2(); break;
@@ -39,7 +46,7 @@ export function initInput({ onDebugKey } = {}) {
     game.view.yaw -= e.movementX * 0.0022;
     game.view.pitch = clamp(game.view.pitch - e.movementY * 0.0022, -1.4, 1.35);
   });
-  addEventListener('wheel', (e) => { if (game.mode === 'play') game.view.dist = clamp(game.view.dist * (e.deltaY > 0 ? 1.12 : 0.89), 2.5, 30); }, { passive: true });
+  addEventListener('wheel', (e) => { if (game.mode === 'play' && !game.flyby) game.view.dist = clamp(game.view.dist * (e.deltaY > 0 ? 1.12 : 0.89), 2.5, 30); }, { passive: true });
 }
 
 /** Manual movement from the keyboard, relative to the camera; null when no key is held. */

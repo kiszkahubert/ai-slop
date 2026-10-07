@@ -6,6 +6,7 @@ import { mulberry32 } from '../core/noise.js';
 import { game, newGame, load, save, hasSave, restHours, campAction, toggleO2, region, score,
   destinations, teleportTo, enterFreeViewing, exitFreeViewing, setHour, setClearWeather, setSpeedMul } from '../sim/game.js';
 import { nearestRope, clipTo, startAutopilot } from '../sim/player.js';
+import { startFlyby, stopFlyby } from '../sim/flyby.js';
 import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
 import { renderDebrief } from './debrief.js';
@@ -94,6 +95,9 @@ export function initScreens(glCanvas) {
   on('openCamp', openCamp);
   on('openTravel', () => openTravel());
   on('teleported', () => resetHUD());
+  on('flybyStart', flybyOverlayOn);
+  on('flybyCaption', setFlybyCaption);
+  on('flybyEnd', flybyOverlayOff);
   on('death', showDeath);
   on('win', showWin);
   document.addEventListener('pointerlockchange', () => {
@@ -104,7 +108,41 @@ export function initScreens(glCanvas) {
       else if (game.mode === 'play') pause();
     } else if (game.mode !== 'play') releasePointer();   // a late lock must never trap a menu
   });
-  canvas.addEventListener('click', () => { if (game.mode === 'play' && !document.pointerLockElement) lockPointer(); });
+  canvas.addEventListener('click', () => { if (game.mode === 'play' && !game.flyby && !document.pointerLockElement) lockPointer(); });
+}
+
+// ---------------- scenic flyby
+/** Leave the teleport menu and hand the camera to the flyby. */
+function enterFlyby() {
+  if (!startFlyby()) { renderTravel(); return; }
+  game.mode = 'play'; currentCamp = null;
+  show(null);
+  $('hud').classList.add('hidden');       // the cinematic overlay replaces the whole HUD
+  releasePointer();
+}
+let flybyHideTimer = null;
+function flybyOverlayOn() {
+  clearTimeout(flybyHideTimer);          // a restart must outrun the previous flight's fade-out
+  const el = $('flyby');
+  el.classList.remove('hidden');
+  requestAnimationFrame(() => el.classList.add('active'));
+}
+function setFlybyCaption(c) {
+  const el = $('flybyCap');
+  if (!c) { el.classList.remove('shown'); return; }
+  $('flybyKicker').textContent = c.kicker || '';
+  $('flybyTitle').textContent = c.title || '';
+  $('flybyText').textContent = c.text || '';
+  el.classList.remove('shown');
+  requestAnimationFrame(() => el.classList.add('shown'));
+}
+function flybyOverlayOff() {
+  const el = $('flyby');
+  el.classList.remove('active');
+  $('flybyCap').classList.remove('shown');
+  clearTimeout(flybyHideTimer);
+  flybyHideTimer = setTimeout(() => { if (!game.flyby) el.classList.add('hidden'); }, 900);
+  if (game.mode === 'play') $('hud').classList.remove('hidden');
 }
 
 export function lockPointer() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch { /* unsupported */ } }
@@ -130,6 +168,7 @@ export function pause() {
   show('scrPause');
 }
 export function escapePressed() {
+  if (game.flyby) { stopFlyby('cancelled'); return; }
   if (game.mode === 'play') pause();
   else if (game.mode === 'paused' && performance.now() - pausedAt > 500) resumePlay();
   else if (game.mode === 'camp') resumePlay();
@@ -172,6 +211,12 @@ function renderTravel() {
       expedition save is kept. Walk, look around, or press <kbd>F</kbd> to follow the route from wherever you land.</p>
     <h3>Teleport</h3>
     <div class="btns dest">${dests}</div>
+    <h3>Scenic flyby</h3>
+    <p class="note">A cinematic camera flight along the South Col route — from Base Camp, over the Khumbu Icefall and the
+      Western Cwm, up the Lhotse Face and along the Southeast Ridge to the summit of Everest — pausing to hover at every
+      camp, landmark and viewpoint. Flown in sunrise light; your time of day and weather are restored when it ends.
+      <kbd>Shift</kbd> skips to the next stop, <kbd>Esc</kbd> ends the flight.</p>
+    <div class="btns"><button class="primary" data-act="flyby">Scenic flyby — the South Col route from the air</button></div>
     <h3>Time of day · Day ${dayOf(game.time)}, ${timeOfDay(game.time)}</h3>
     <div class="btns">${time}</div>
     <h3>Weather</h3>
@@ -263,6 +308,7 @@ function onCampClick(e) {
   if (act === 'rest') { if (restHours(Number(b.dataset.h)) && game.mode === 'camp') renderCamp(); return; }
   if (act === 'free') { save(true); enterFreeViewing(); renderTravel(); return; }
   if (act === 'tp') { teleportTo(b.dataset.id); resumePlay(); return; }
+  if (act === 'flyby') { enterFlyby(); return; }
   if (act === 'hour') { setHour(Number(b.dataset.h)); renderTravel(); return; }
   if (act === 'clear') { setClearWeather(b.dataset.on === '1'); renderTravel(); return; }
   if (act === 'speed') { setSpeedMul(Number(b.dataset.m)); renderTravel(); return; }

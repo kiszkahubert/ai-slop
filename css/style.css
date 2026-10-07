@@ -160,3 +160,21 @@ body[data-screen="scrPause"] #toasts { display: none; }
 .quality .qbtns { display: inline-flex; gap: 6px; }
 .quality button { padding: 4px 12px; font-size: 13px; }
 .quality button.active { border-color: var(--good, #7fd8a8); color: #fff; }
+
+/* ---------- scenic flyby ---------- */
+#flyby { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#flyby .lb { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 1.2s cubic-bezier(.6,0,.3,1); }
+#flyby .barTop { top: 0; }
+#flyby .barBot { bottom: 0; }
+#flyby.active .lb { height: 7.5vh; }
+#flybyCap { position: absolute; left: 50%; bottom: calc(7.5vh + 30px); transform: translateX(-50%); text-align: center;
+  max-width: min(760px, 92vw); opacity: 0; transition: opacity .8s; text-shadow: 0 1px 8px rgba(0,0,0,.95), 0 0 24px rgba(0,0,0,.6); }
+#flybyCap.shown { opacity: 1; }
+#flybyKicker { font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: #b9c8d8; }
+#flybyTitle { font-size: 26px; font-weight: 700; margin-top: 2px; }
+#flybyText { font-size: 14px; color: #d5dee8; margin-top: 4px; line-height: 1.45; }
+#flybyHint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #8fa1b3;
+  opacity: 0; transition: opacity .8s; }
+#flybyHint kbd { font: 11px ui-monospace, monospace; background: rgba(255,255,255,0.12); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 5px; color: #e8eef5; }
+#flyby.active #flybyHint { opacity: 0.85; }

@@ -7,15 +7,29 @@ export class CameraRig {
   constructor(camera) {
     this.camera = camera; this.sway = 0; this.dist = 7; this.target = new THREE.Vector3();
     this.free = null;   // debug free camera: { pos: [x,y,z], look: [x,y,z] }
+    this.pose = null;   // last camera pose as plain arrays, for the scenic flyby's opening blend
   }
   update(dt, time, game, climber) {
     const { P, S, view } = game, cam = this.camera;
+    if (game.flyby?.pose) {
+      const p = game.flyby.pose;
+      cam.position.set(p.pos[0], p.pos[1], p.pos[2]);
+      cam.rotation.set(0, 0, 0, 'YXZ');
+      cam.lookAt(p.look[0], p.look[1], p.look[2]);
+      if (p.roll) cam.rotateZ(p.roll);
+      if (cam.fov !== p.fov) { cam.fov = p.fov; cam.updateProjectionMatrix(); }
+      this.dist = 400;                      // distant focus so depth of field keeps the peaks sharp
+      this.pose = { pos: p.pos, look: p.look };
+      climber.group.visible = false;
+      return;
+    }
     if (this.free) { cam.position.set(...this.free.pos); cam.lookAt(...this.free.look); climber.group.visible = true; return; }
     this.sway = lerp(this.sway, clamp((74 - S.spo2) / 18, 0, 1) * (game.mode === 'play' ? 1 : 0.3), dt * 0.8);
     const sw = this.sway, fall = !!(P.falling || P.recovery);
     const started=!!P.falling && this.fallState!==P.falling;
     this.fallState=P.falling;
     const yaw = view.yaw + sw * 0.05 * Math.sin(time * 0.53);
+    const fx0 = -Math.sin(yaw), fz0 = -Math.cos(yaw);
     // Lift the chase camera above the uphill slope while keeping the user's orbit.
     const sx=Math.sin(yaw),sz=Math.cos(yaw),grade=fall?game.field.slope(P.x,P.z,16):null;
     const holes=game.world?.crevasseField,inCavity=!!holes?.at(P.x,P.z) && P.y<game.field.height(P.x,P.z)-.3;
@@ -26,6 +40,7 @@ export class CameraRig {
       cam.position.set(P.x, P.y + 1.65 + (P.moving ? Math.sin(P.phase * 2) * 0.04 : 0), P.z);
       cam.rotation.set(pitch, yaw, roll, 'YXZ');
       climber.group.visible = false;
+      this.pose = { pos: [P.x, cam.position.y, P.z], look: [P.x - fx0 * 50, cam.position.y + Math.sin(pitch) * 50, P.z - fz0 * 50] };
       this.wasFalling=false;
       return;
     }
@@ -50,6 +65,7 @@ export class CameraRig {
     if (!holes?.at(cam.position.x,cam.position.z) && cam.position.y < gh) cam.position.y = gh;
     cam.lookAt(this.target);
     cam.rotateZ(roll);
+    this.pose = { pos: [cam.position.x, cam.position.y, cam.position.z], look: [this.target.x, this.target.y, this.target.z] };
     // When a wall leaves the camera inside the clothing, hide the visual body
     // until orbiting creates space. Physics and the headlamp remain active.
     if(fall && this.dist<.45)climber.group.visible=false;
