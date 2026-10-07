@@ -16,6 +16,7 @@ import { loadTerrainRock } from './render/terrainAssets.js';
 import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
 import { installAtmosphericFog } from './render/atmosphere.js';
 import { setupPostProcessing } from './render/postfx.js';
+import { FRAME_CAPS, FramePacer, initialFrameCap, rememberFrameCap } from './render/framePacing.js';
 import { RayTracingLighting } from './render/rayTracing/lighting.js';
 import { SHARED, patchSceneMaterials } from './render/shared.js';
 import { on } from './core/events.js';
@@ -129,9 +130,15 @@ async function boot() {
   requestAnimationFrame(frame);
 }
 
-let last = performance.now(), simTime = 0;
+let last = performance.now(), simTime = 0, frameCap = initialFrameCap();
+const pacer = new FramePacer(FRAME_CAPS[frameCap].fps);
+const MENUS = new Set(['title', 'paused', 'camp', 'won']);
+let labels = null, labelSources = null;
 function frame(now) {
   requestAnimationFrame(frame);
+  const menu = MENUS.has(game.mode);
+  if (!pacer.due(now, menu)) return;          // frame-rate limit: skip this display refresh entirely
+  rayTracing.paceMs = pacer.idleMs(menu);
   const dt = Math.min(0.05, (now - last) / 1000); last = now; simTime += dt;
   if (game.mode === 'play') {
     const ctl = manualControl();
@@ -148,7 +155,7 @@ function frame(now) {
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
-    labels: [...game.camps.map((c) => c.label), ...game.world.labels],
+    labels: currentLabels(),
   });
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
   const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
@@ -163,6 +170,21 @@ function frame(now) {
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
 }
+
+/** Camp and summit name tags, rebuilt only when the camps or the world change (not every frame). */
+function currentLabels() {
+  if (!labels || labelSources[0] !== game.camps || labelSources[1] !== game.world.labels || labelSources[2] !== game.camps.length) {
+    labels = [...game.camps.map((c) => c.label), ...game.world.labels];
+    labelSources = [game.camps, game.world.labels, game.camps.length];
+  }
+  return labels;
+}
+function setFrameCap(name) {
+  if (!FRAME_CAPS[name]) return false;
+  frameCap = name; rememberFrameCap(name); pacer.setFps(FRAME_CAPS[name].fps);
+  return true;
+}
+on('setFrameCap', setFrameCap);
 
 // ---------------- debugging / automated tests
 const all = () => Object.values(game.routes).flatMap((r) => r.pts.filter((_, i) => Object.values(r.tags).includes(i)));
@@ -208,7 +230,7 @@ on('setRayTracingStrength', name => rayTracing?.setStrength(name));
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
-  get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  get quality() { return qualityName; }, get frameCap() { return frameCap; }, setFrameCap, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
   get rayTracing() { return rayTracing; }, setRayTracing: value => rayTracing?.setEnabled(value),
   triggerAvalanche: (options) => game.physics.triggerAvalanche(options),
   forceFall: (options) => game.physics.startFall({ reason: 'test', ...options }),

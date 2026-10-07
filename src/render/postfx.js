@@ -3,13 +3,14 @@
 // The game uses a logarithmic depth buffer (true-scale terrain from 0.3 m to 150 km), which the stock SSAO/GTAO and
 // Bokeh passes cannot read, so the AO and DOF passes here decode it themselves:
 //   depth d = log2(1 + w) / log2(far + 1)  ->  view distance w = 2^(d · log2(far + 1)) - 1.
-// On Low nothing here runs and the renderer draws straight to the screen with ACES tone mapping.
+// On Low only the terrain depth prepass (depthPrepass.js) runs here and the renderer draws straight to the screen with ACES tone mapping.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { VISUALS } from '../config.js';
 import { RT_SHARED } from './rayTracing/materials.js';
+import { TerrainDepthPrepass } from './depthPrepass.js';
 
 const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`;
 const DEPTH = `
@@ -117,6 +118,7 @@ export class PostFX {
     this.dofQuad = quad(DOF_FRAG, { ...depthU(), tColor: { value: null }, uTexel: { value: new THREE.Vector2() }, uFocus: { value: 7 }, uRange: { value: P.dofFocusRange }, uMaxBlur: { value: P.dofMaxBlur } });
     this.output = new OutputPass();
     this.output.renderToScreen = true;
+    this.prepass = new TerrainDepthPrepass(renderer);
   }
 
   /** (Re)build the render targets for a quality preset. */
@@ -143,15 +145,18 @@ export class PostFX {
 
   setSize(w, h) {
     this.w = Math.max(1, Math.floor(w)); this.h = Math.max(1, Math.floor(h));
+    this.prepass.setSize(this.w, this.h);
     if (this.q) this.configure(this.q);
   }
 
   /** opts: { free (bool), focus (m) } */
   render(opts = {}) {
     const { renderer, scene, camera, q } = this;
-    if (!q || !q.post) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
+    this.prepass.render(scene, camera);             // terrain depth first: hidden terrain skips its shading
+    if (!q || !q.post) { renderer.setRenderTarget(null); renderer.render(scene, camera); this.prepass.end(); return; }
     renderer.setRenderTarget(this.sceneRT);
     renderer.render(scene, camera);
+    this.prepass.end();
     const logFar = Math.log2(camera.far + 1), proj = camera.projectionMatrix.elements;
     const setDepth = (u) => { u.tDepth.value = this.sceneRT.depthTexture; u.uLogFar.value = logFar; u.uProj.value.set(proj[0], proj[5]); };
     // ambient occlusion at half resolution, then a depth-aware blur

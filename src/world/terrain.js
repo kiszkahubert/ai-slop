@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { TERRAIN } from '../config.js';
 import { buildCrevasseTerrain } from './crevasseTerrain.js';
+import { TERRAIN_LAYER } from '../render/depthPrepass.js';
 
 export function axisSamples(start, end, step) {
   const result=[]; for(let i=start;i<end;i+=step)result.push(i);
@@ -110,7 +111,7 @@ export class TerrainLOD {
   setLevel(ch, lv) {
     if (!ch.meshes[lv]) {
       const m = new THREE.Mesh(this.buildGeometry(ch, this.o.levels[lv]), this.mat);
-      m.receiveShadow = !!this.o.shadows; m.matrixAutoUpdate = false; m.visible = false;
+      m.receiveShadow = !!this.o.shadows; m.matrixAutoUpdate = false; m.visible = false; m.layers.enable(TERRAIN_LAYER);
       this.scene.add(m); ch.meshes[lv] = m;
     }
     if (ch.level >= 0 && ch.meshes[ch.level]) ch.meshes[ch.level].visible = false;

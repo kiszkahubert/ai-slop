@@ -22,7 +22,9 @@ export class Environment {
     this.sky.geometry.dispose();
     this.sky.geometry = new THREE.SphereGeometry(1, 48, 24);
     this.sky.material.vertexShader = this.sky.material.vertexShader.replace('gl_Position.z = gl_Position.w;', 'gl_Position.z = gl_Position.w * 0.99999;');
-    this.sky.scale.setScalar(40000); this.sky.frustumCulled = false; this.sky.renderOrder = -10;
+    // Drawn after the other opaque geometry: it never writes depth and sits behind everything, so the same pixels
+    // come out, but the depth test now skips its (expensive) scattering shader wherever terrain already covers.
+    this.sky.scale.setScalar(40000); this.sky.frustumCulled = false; this.sky.renderOrder = 1e6;
     const u = this.sky.material.uniforms;
     u.turbidity.value = 1.5; u.rayleigh.value = 0.8; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.85;
     scene.add(this.sky);
@@ -68,6 +70,7 @@ export class Environment {
     u.sunPosition.value.copy(this.sunVec); u.rayleigh.value = 0.45 + 1.2 * w.S; u.turbidity.value = 1.2 + 8 * w.S;
     this.sky.position.copy(camera.position); this.stars.position.copy(camera.position);
     this.stars.material.opacity = (1 - smoothstep(-0.2, -0.02, el)) * (1 - w.S) * 0.95;
+    this.stars.visible = this.stars.material.opacity > 0;           // fully transparent: skip the draw
     const cloud = 1 - 0.7 * w.S, P = ctx.player;
     this.sun.intensity = VISUALS.lighting.sun * smoothstep(-0.02, 0.15, el) * cloud;
     this.sun.color.setRGB(1, lerp(0.62, 0.97, smoothstep(0, 0.4, el)), lerp(0.42, 0.92, smoothstep(0, 0.4, el)));

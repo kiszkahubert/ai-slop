@@ -246,6 +246,19 @@ What the renderer does:
   falls and the skiing stance. Sculpted down baffles and ground-aware feet improve the silhouette and posture;
   nearby ropes sag and subdivided flags deform in the wind.
 
+**Frame rate and GPU load.** *Frame rate* on the title and pause screens caps how often a frame is drawn: **30**,
+**60** (default), **120** or **Max** (every display refresh), remembered by the browser, or `?fps=30|60|120|max` in the
+URL. Uncapped, a browser redraws at the monitor's refresh rate (144–240 Hz on gaming displays) and the GPU runs flat
+out for no visible gain in this slow-paced game. Behind menus (title, pause, camp, summit) it draws at most 30 frames a
+second. The cap changes how often a frame is drawn, never what is in it. Independently of the cap, the renderer avoids
+work that never reaches the screen, with pixel-identical output:
+- a terrain depth prepass (`src/render/depthPrepass.js`): the logarithmic depth buffer stops the GPU from rejecting
+  hidden pixels before shading them, so every slope behind a ridge ran the full terrain shader (~4.5 terrain layers per
+  pixel at Base Camp). Terrain more than twice as far as all the visible terrain around a pixel now skips its texture
+  and lighting work (35–65% of terrain fragments);
+- the sky is drawn after the terrain, so the depth test skips its scattering shader wherever terrain covers it;
+- stars, snowflakes, spindrift streaks and mist that are fully transparent are not drawn.
+
 See [the issue 13 implementation and comparison notes](docs/visual-fidelity.md) for shader corrections,
 asset attribution, shared geometry, validation and remaining hardware/volumetric-cloud work.
 
@@ -336,6 +349,8 @@ src/
     iceAxe.js         ice axe: curved shaft, toothed pick, adze, spike, grip, leash
     camera.js         third / first person camera rig
     quality.js        Low / Medium / High presets
+    framePacing.js    frame-rate limit (30 / 60 / 120 / Max; 30 behind menus)
+    depthPrepass.js   terrain depth prepass: hidden terrain skips its shading
     proceduralTextures.js  generated terrain layers (albedo, normal, roughness, AO), jacket quilting, logo stand-in
     terrainMaps.js    relief normals + horizon AO from the elevation model; the mountains' sun shadows
     lighting.js       sun with stable soft shadows, sky light, moon, headlamp

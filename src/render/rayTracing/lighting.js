@@ -39,7 +39,7 @@ export class RayTracingLighting {
     this.captureCamera=camera.clone();
     this.frame=0;this.job=0;this.pending=null;this.snapshot=null;this.caches=[];this.textures=[];this.screenTargets=[];
     this.origin=new THREE.Vector3();this.previousOrigin=new THREE.Vector3();this.lastScanPos=new THREE.Vector3();this.lastScanFrame=null;this.previousVP=new THREE.Matrix4();this.historyValid=false;
-    this.scale=RT_LIMITS.startScale;this.memoryScaleLimit=.5;this.frameMs=16.7;this.lastFrameAt=null;this.tileCount=1;this.localUpdateStride=1;this.stats={requested:this.requested,active:false,status:'Off',gpuMs:null,memoryBytes:0,triangles:0,snapshots:0,cacheTiles:0,localUpdateStride:1};
+    this.scale=RT_LIMITS.startScale;this.memoryScaleLimit=.5;this.frameMs=16.7;this.lastFrameAt=null;this.paceMs=0;this.tileCount=1;this.localUpdateStride=1;this.stats={requested:this.requested,active:false,status:'Off',gpuMs:null,memoryBytes:0,triangles:0,snapshots:0,cacheTiles:0,localUpdateStride:1};
     this.lastSun=new THREE.Vector3();this.lastTime=null;
     this.strength=initialStrength();RT_SHARED.uRtStrength.value=RT_STRENGTHS[this.strength];this.stats.strength=this.strength;
     this.timer=new GpuTimer(renderer.getContext());
@@ -273,7 +273,8 @@ export class RayTracingLighting {
       this.lastTime=time;this.frame++;this.timer.poll();this.stats.gpuMs=this.timer.ms;
       // Smoothed frame interval: the fallback load signal where GPU timer queries are unavailable
       // (common on Linux / Mesa), so the lighting still scales down instead of dragging the frame rate.
-      const now=performance.now();if(this.lastFrameAt!==null)this.frameMs+=(Math.min(250,now-this.lastFrameAt)-this.frameMs)*.05;this.lastFrameAt=now;
+      // The frame-rate limit's deliberate idle time (paceMs) is not load and is left out.
+      const now=performance.now();if(this.lastFrameAt!==null)this.frameMs+=(Math.max(0,Math.min(250,now-this.lastFrameAt)-this.paceMs)-this.frameMs)*.05;this.lastFrameAt=now;
       if(this.frame%60===0){
         const next=nextScale(this.scale,this.timer.ms,this.frameMs,this.memoryScaleLimit);
         if(next!==this.scale){this.scale=next;this.resize(size.x,size.y);this.historyValid=false;}

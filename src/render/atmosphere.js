@@ -125,6 +125,7 @@ export class MistLayers {
             float density=sqrt(1.0-r)*smoothstep(0.0,.6,n)*intersection;
             float near=smoothstep(20.0,180.0,length(vCloudWorld-uCam));
             float alpha=(1.0-exp(-density*uOpacity))*near;
+            if(alpha<=0.0)discard;      // blending nothing leaves the pixel as it was: skip the blend
             vec3 light=uColor*mix(.72,1.12,smoothstep(.1,.95,vCloudUV.y));
             gl_FragColor=vec4(light,alpha);
           }`});
@@ -189,6 +190,8 @@ export class WindSnow {
     mat.opacity = amount * 0.85; mat.color.setScalar(lerp(0.35, 1, day));
     const streak = smoothstep(30, 90, wind);
     this.lines.material.opacity = amount * streak * 0.35; this.lines.material.color.setScalar(lerp(0.35, 1, day));
+    // fully transparent flakes or streaks draw nothing: skip them (and keep them out of the GPU's way)
+    this.points.visible = mat.opacity > 0; this.lines.visible = this.lines.material.opacity > 0;
     if (amount > 0.01) {
       const wd = windDirDeg * D2R, wv = (wind / 3.6) * 0.6;
       const wx = -Math.sin(wd) * wv, wz = Math.cos(wd) * wv;            // blowing away from the "from" direction

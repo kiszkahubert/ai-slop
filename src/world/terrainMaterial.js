@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { TERRAIN, VISUALS } from '../config.js';
 import { D2R } from '../core/math.js';
 import { SHARED, MACRO_SHADOW_PARS, injectSunShadow } from '../render/shared.js';
+import { ZCULL, ZCULL_PARS, zcullTest } from '../render/depthPrepass.js';
 
 /**
  * opts: { layers: {albedo, surface, size} texture arrays, macroNoise, relief (texture|null), reliefRect (Vector4),
@@ -32,6 +33,7 @@ export function createTerrainMaterial(opts) {
     uTile: { value: new THREE.Vector4(1 / V.textureTileM, 1 / V.microTileM, V.normalStrength, opts.microDetail ? V.microNormalStrength : 0) },
     uSnowFx: { value: new THREE.Vector4(V.snowSparkle, V.snowSubsurface, 0, V.aoStrength) },
     uSastrugiCS: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) },
+    uZCull: ZCULL.uZCull, uZCullOn: ZCULL.uZCullOn,
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.86, metalness: 0 });
   mat.userData.rtTerrain = true;
@@ -47,12 +49,18 @@ export function createTerrainMaterial(opts) {
         vWPos = wp0.xyz; vWNrm = normalize(mat3(modelMatrix) * objectNormal); vGl = aGlacier; vRock = aRock;
         vec2 dc = wp0.xz - cameraPosition.xz;
         transformed.y -= dot(dc, dc) * uCurv;`);
-    sh.fragmentShader = FRAG_PARS + MACRO_SHADOW_PARS + '\n' + injectSunShadow(sh.fragmentShader, 'vWPos')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_COLOR)
+    // hidden terrain (see depthPrepass.js) stops right after the last implicit-derivative texture read. Every
+    // derivative needed later (the glints' footprint, three's geometric roughness) is taken before that point.
+    const color = FRAG_COLOR.replace(DERIVATIVES, DERIVATIVES + PRE_CULL_DERIVATIVES + zcullTest(PRE_CULL_VALUES));
+    sh.fragmentShader = FRAG_PARS + ZCULL_PARS + 'vec3 tDpx, tDpy; float tGeomRough;\n' + MACRO_SHADOW_PARS + '\n' + injectSunShadow(sh.fragmentShader, 'vWPos')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + color)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = normalize( ( viewMatrix * vec4( tNrm, 0.0 ) ).xyz );`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = tRough;`)
+      // the same roughness three computes there, with its normal derivatives taken before any discard
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        material.roughness = min( max( roughnessFactor, 0.0525 ) + tGeomRough, 1.0 );`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
         {
           float occ = mix( 1.0, tAO, uSnowFx.w );
@@ -68,7 +76,7 @@ export function createTerrainMaterial(opts) {
           float hsh = fract( sin( dot( cell, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
           vec3 facet = normalize( tNrm + vec3( hsh - 0.5, 0.0, fract(hsh * 17.0) - 0.5 ) * 0.35 );
           float ndl = max( dot( tNrm, uSunDir ), 0.0 );
-          float resolved = 1.0 - smoothstep( 0.025, 0.09, max(length(dFdx(vWPos)), length(dFdy(vWPos))) );
+          float resolved = 1.0 - smoothstep( 0.025, 0.09, max(length(tDpx), length(tDpy)) );   // = dFdx/dFdy(vWPos)
           float glint = smoothstep(0.985, 1.0, hsh) * pow(max(dot(facet, normalize(vd + uSunDir)), 0.0), 320.0)
             * resolved * ndl * tSnow * uSnowFx.x * macroSunShadow( vWPos )
             * ( 1.0 - smoothstep( 25.0, 70.0, length( cameraPosition - vWPos ) ) );
@@ -76,7 +84,7 @@ export function createTerrainMaterial(opts) {
         }
         #include <opaque_fragment>`);
   };
-  mat.customProgramCacheKey = () => `terrain-${mat.defines.TERRAIN_ANTI_TILING}-${mat.defines.TERRAIN_MICRO}-${mat.defines.TERRAIN_GRAD}`;
+  mat.customProgramCacheKey = () => `terrain-zcull-${mat.defines.TERRAIN_ANTI_TILING}-${mat.defines.TERRAIN_MICRO}-${mat.defines.TERRAIN_GRAD}`;
   return mat;
 }
 
@@ -197,6 +205,13 @@ export function terrainSampleShader() {
   return pars + '\nvoid secondaryTerrain(vec3 p, vec3 n0, float glacier, float rock, float camD, vec3 dpx, vec3 dpy, out vec3 result)' + body;
 }
 
+const DERIVATIVES = 'vec3 dpx = dFdx( q ), dpy = dFdy( q );';
+// = dFdx/dFdy of vWPos, and three's geometryRoughness from nonPerturbedNormal (normalize( vNormal ), front faces)
+const PRE_CULL_DERIVATIVES = `
+  tDpx = dpx; tDpy = dpy;
+  { vec3 npn = normalize( vNormal ); vec3 dxy = max( abs( dFdx( npn ) ), abs( dFdy( npn ) ) ); tGeomRough = max( max( dxy.x, dxy.y ), dxy.z ); }`;
+// everything above that came from implicit derivatives (relief and macro-noise reads, dFdx/dFdy)
+const PRE_CULL_VALUES = 'rel.x + rel.y + rel.a + n1 + n2 + n3 + n4 + tGeomRough + dot( abs( tDpx ) + abs( tDpy ), vec3( 1.0 ) )';
 const FRAG_COLOR = `
 {
   vec3 n0 = normalize( vWNrm );
