@@ -1,0 +1,1 @@
+[{"script":"tests/terrain-normals.js","expect":"r.pass && r.cases >= 300"}]

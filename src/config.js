@@ -50,24 +50,25 @@ export const SLIP_ANGLE = 32;
 // ---------------- visuals (tunable; no effect on game mechanics)
 export const VISUALS = {
   helmetLogoUrl: 'assets/redbull-logo.png',  // transparent PNG decal on the helmet; a placeholder is drawn if missing
+  lighting: { sun: 3.6, skyDay: 0.52, skyNight: 0.09, exposureSun: 0.72, exposureShade: 0.84 },
   terrain: {
     textureTileM: 7,          // metres per repeat of the layer textures (macro scale)
     microTileM: 1.3,          // metres per repeat of the close-up micro detail
-    normalStrength: 1.0,      // layer normal-map strength
-    microNormalStrength: 0.6, // close-up micro-normal strength (fades out by ~120 m)
+    normalStrength: 0.85,     // layer normal-map strength
+    microNormalStrength: 0.32, // close-up micro-normal strength (fades out by ~120 m)
     reliefNormalFade: [260, 900],   // m: blend from mesh normals to the Sobel relief normal map
     aoStrength: 0.6,          // baked terrain (horizon) ambient occlusion
-    snowSparkle: 1.0,         // sun glints on snow
-    snowSubsurface: 1.0,      // blue-tinted brightening of snow in shadow
+    snowSparkle: 0.65,        // sun glints on snow
+    snowSubsurface: 0.22,     // restrained blue fill; RT replaces this term in covered areas
     sastrugiAngleDeg: 300,    // direction of the prevailing wind that carves the snow ripples (from WNW)
   },
   fog: {
-    heightFalloff: 0.00042,   // 1/m: how quickly the haze thins with altitude (0 = plain distance fog)
+    heightFalloff: 0.0005,    // 1/m: how quickly the haze thins with altitude (0 = plain distance fog)
     aerialTint: [0.52, 0.66, 0.92], // blue of distant ranges (aerial perspective)
-    aerialStrength: 0.55,
+    aerialStrength: 0.65,
   },
   post: {
-    bloomStrength: 0.22, bloomRadius: 0.45, bloomThreshold: 1.25,
+    bloomStrength: 0.12, bloomRadius: 0.45, bloomThreshold: 1.4,
     vignette: 0.28,
     aoRadius: 1.4, aoIntensity: 1.1, aoMaxDistance: 120,   // screen-space AO (High)
     dofFocusRange: 4, dofMaxBlur: 6,                       // depth of field (High, free viewing only): sharp zone (m), blur (px)

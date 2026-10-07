@@ -48,6 +48,18 @@ Nuptse progress and high-camp stock while preserving the existing expedition.
 
 ## Free viewing
 
+**Ray-traced lighting** is an optional switch on the title and pause screens. It adds soft sun shadows,
+terrain skylight and one diffuse bounce while keeping the normal Three.js renderer. It is off by default;
+the choice is remembered separately from graphics quality. Medium and High support it; Low pauses it.
+Lighting converges over time, including on distant mountains. The first nearby geometry snapshot takes
+several seconds at Base Camp. `?rt=on` and `?rt=off` override the saved preference. Beside the switch,
+**Subtle / Normal / Strong** sets how pronounced the traced occlusion and bounce light are (`?rtStrength=`).
+The internal lighting resolution adapts to your GPU automatically.
+
+WebGL2 with floating point render targets is required. Unsupported GPUs or initialization failures fall
+back to normal lighting and display an explanation beside the switch. See [the rendering notes](docs/ray-tracing.md)
+for the architecture, rebuild command and hardware benchmark procedure.
+
 To look around, choose **Free viewing** on the title screen, or open the **Base Camp** menu (E) during an expedition.
 You can teleport to any camp (Base Camp, Camps 1–4, Lhotse Camp 4), the Icefall, the Yellow Band, the Balcony, the
 South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or any of the three summits.
@@ -214,23 +226,41 @@ oxygen, route map, compass, camera and controls behave exactly the same at every
 | Mist layers, snow particles | off, 1,500 | on, 3,500 | on, 6,000 |
 
 What the renderer does:
-- **Terrain**: four procedural layers (dark layered rock, snow with wind-carved sastrugi, ice/firn, moraine gravel),
-  each with albedo, normal, roughness and AO, generated at load (no texture files). They are sampled with triplanar
+- **Terrain**: photographed CC0 cliff rock plus procedural snow, ice/firn and moraine gravel,
+  each with albedo, normal, roughness and AO. They are sampled with signed triplanar
   mapping, so steep faces don't stretch, and blended by altitude, slope and the glacier/rock masks. Every layer is
   sampled at two scales mixed by low-frequency noise (no visible tiling), with micro normals up close. A Sobel normal
   map and horizon AO baked from the elevation model keep distant relief crisp. Snow glints in the sun and glows
-  faintly blue in shadow.
+  faintly blue in shadow. Projected-error LOD preserves native ridges; local snow shelves share their
+  display triangles with support and fall collisions. Instanced footprints mark compressed route snow.
 - **Light**: the mountains cast real shadows on each other (ray-marched toward the sun a few rows per frame), the
   sun's shadow map is snapped to its texel grid so near shadows stay sharp and never shimmer, and exposure adapts
   when you stand in shadow.
 - **Atmosphere**: fog depends on distance *and* altitude, so valleys are hazier than summits and far ranges turn
-  blue. Horizontal visibility still matches the HUD. Valley mist banks drift with the wind, and wind-blown snow and
+  blue. Storm visibility still matches the HUD. Finite, soft valley cloud banks drift with the wind, and wind-blown snow and
   spindrift streaks scale with the wind shown on the HUD.
 - **Climber**: built from rounded shapes on a joint hierarchy: quilted red down suit, harness with carabiners and
   the rope tied in, crampons on tall boots, a pack with the oxygen cylinder, regulator, hose and mask (shown while
   oxygen is on), mirrored goggles, a helmet with the logo decal, and a real ice axe. Animations: walking, a cane axe
   on easy ground, planting it on steep ground, careful steps on ladders, breathing that quickens with hypoxia,
-  falls and the skiing stance.
+  falls and the skiing stance. Sculpted down baffles and ground-aware feet improve the silhouette and posture;
+  nearby ropes sag and subdivided flags deform in the wind.
+
+**Frame rate and GPU load.** *Frame rate* on the title and pause screens caps how often a frame is drawn: **30**,
+**60** (default), **120** or **Max** (every display refresh), remembered by the browser, or `?fps=30|60|120|max` in the
+URL. Uncapped, a browser redraws at the monitor's refresh rate (144–240 Hz on gaming displays) and the GPU runs flat
+out for no visible gain in this slow-paced game. Behind menus (title, pause, camp, summit) it draws at most 30 frames a
+second. The cap changes how often a frame is drawn, never what is in it. Independently of the cap, the renderer avoids
+work that never reaches the screen, with pixel-identical output:
+- a terrain depth prepass (`src/render/depthPrepass.js`): the logarithmic depth buffer stops the GPU from rejecting
+  hidden pixels before shading them, so every slope behind a ridge ran the full terrain shader (~4.5 terrain layers per
+  pixel at Base Camp). Terrain more than twice as far as all the visible terrain around a pixel now skips its texture
+  and lighting work (35–65% of terrain fragments);
+- the sky is drawn after the terrain, so the depth test skips its scattering shader wherever terrain covers it;
+- stars, snowflakes, spindrift streaks and mist that are fully transparent are not drawn.
+
+See [the issue 13 implementation and comparison notes](docs/visual-fidelity.md) for shader corrections,
+asset attribution, shared geometry, validation and remaining hardware/volumetric-cloud work.
 
 **The helmet logo** is the decal texture `assets/redbull-logo.png` (path: `VISUALS.helmetLogoUrl` in
 `src/config.js`). The file in the repo is a neutral "LOGO" stand-in; replace it with your transparent PNG
@@ -319,6 +349,8 @@ src/
     iceAxe.js         ice axe: curved shaft, toothed pick, adze, spike, grip, leash
     camera.js         third / first person camera rig
     quality.js        Low / Medium / High presets
+    framePacing.js    frame-rate limit (30 / 60 / 120 / Max; 30 behind menus)
+    depthPrepass.js   terrain depth prepass: hidden terrain skips its shading
     proceduralTextures.js  generated terrain layers (albedo, normal, roughness, AO), jacket quilting, logo stand-in
     terrainMaps.js    relief normals + horizon AO from the elevation model; the mountains' sun shadows
     lighting.js       sun with stable soft shadows, sky light, moon, headlamp

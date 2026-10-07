@@ -2,7 +2,7 @@
 const browser = Object.fromEntries(['window', 'document', 'localStorage', 'performance', 'fetch', 'createImageBitmap',
   'addEventListener', 'innerWidth', 'innerHeight', 'devicePixelRatio', 'location', 'URLSearchParams', 'AudioContext',
   'requestAnimationFrame', 'setTimeout', 'clearTimeout', 'console', 'KeyboardEvent', 'CustomEvent', 'URL', 'Image',
-  'navigator'].map((g) => [g, 'readonly']));
+  'navigator', 'Worker', 'ImageData', 'globalThis', '__sim'].map((g) => [g, 'readonly']));
 const node = Object.fromEntries(['process', 'console', 'URL', 'setTimeout', 'globalThis', 'structuredClone']
   .map((g) => [g, 'readonly']));
 
@@ -22,7 +22,7 @@ const rules = {
 };
 
 export default [
-  { ignores: ['node_modules/**', 'tests/out/**', 'dem/**'] },
+  { ignores: ['node_modules/**', '.npm-cache/**', 'assets/render/**', 'tests/out/**', 'dem/**'] },
   { files: ['src/**/*.js'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: browser }, rules },
   // test scripts evaluated inside the page (top-level return is allowed there)
   {

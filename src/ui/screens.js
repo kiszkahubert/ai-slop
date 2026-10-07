@@ -10,11 +10,23 @@ import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
 import { renderDebrief } from './debrief.js';
 import { QUALITY_PRESETS, currentQuality } from '../render/quality.js';
+import { FRAME_CAPS, initialFrameCap } from '../render/framePacing.js';
 import { CLIMBS, reachedSummits } from '../world/route.js';
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['scrTitle', 'scrPause', 'scrCamp', 'scrDead', 'scrWin', 'scrDebrief', 'scrLoading'];
 let canvas, currentCamp = null, pausedAt = 0, expectUnlock = false, debriefReturn = 'scrDead';
+let rayTracingStatus = { requested: false, status: 'Off' };
+on('rayTracingStatus', status => { rayTracingStatus = status; renderRayTracing(); });
+function renderRayTracing() {
+  for (const box of document.querySelectorAll('[data-ray-tracing]')) {
+    const strength = rayTracingStatus.strength || 'normal';
+    const levels = [['subtle', 'Subtle'], ['normal', 'Normal'], ['strong', 'Strong']]
+      .map(([id, label]) => `<button data-rt-strength="${id}" class="${id === strength ? 'active' : ''}" ${rayTracingStatus.requested ? '' : 'disabled'}>${label}</button>`).join('');
+    box.innerHTML = `<label><input type="checkbox" data-rt-toggle ${rayTracingStatus.requested ? 'checked' : ''}> Ray-traced lighting</label>
+      <span class="qbtns" style="margin-left:8px">${levels}</span><small class="dim" style="display:block">${rayTracingStatus.status}</small>`;
+  }
+}
 
 function show(id) {
   for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
@@ -28,10 +40,25 @@ function renderQualityButtons() {
   }
 }
 
+/** Frame-rate limit buttons (30 / 60 / 120 / Max) next to the quality buttons. */
+let frameCap = initialFrameCap();
+function renderFpsButtons() {
+  for (const box of document.querySelectorAll('[data-fps-buttons]')) {
+    box.innerHTML = Object.entries(FRAME_CAPS).map(([id, c]) => `<button data-fps="${id}" class="${id === frameCap ? 'active' : ''}">${c.label}</button>`).join('');
+  }
+}
+
 export function initScreens(glCanvas) {
   canvas = glCanvas;
   renderQualityButtons();
+  renderFpsButtons();
+  renderRayTracing();
+  document.addEventListener('change', e => { if (e.target.matches('[data-rt-toggle]')) emit('setRayTracing', e.target.checked); });
   document.addEventListener('click', (e) => {
+    const rs = e.target.closest('[data-rt-strength]');
+    if (rs) { emit('setRayTracingStrength', rs.dataset.rtStrength); return; }
+    const fb = e.target.closest('[data-fps]');
+    if (fb) { frameCap = fb.dataset.fps; emit('setFrameCap', frameCap); renderFpsButtons(); return; }
     const b = e.target.closest('[data-quality]');
     if (!b) return;
     emit('setQuality', b.dataset.quality);

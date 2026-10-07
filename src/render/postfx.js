@@ -3,12 +3,14 @@
 // The game uses a logarithmic depth buffer (true-scale terrain from 0.3 m to 150 km), which the stock SSAO/GTAO and
 // Bokeh passes cannot read, so the AO and DOF passes here decode it themselves:
 //   depth d = log2(1 + w) / log2(far + 1)  ->  view distance w = 2^(d · log2(far + 1)) - 1.
-// On Low nothing here runs and the renderer draws straight to the screen with ACES tone mapping.
+// On Low only the terrain depth prepass (depthPrepass.js) runs here and the renderer draws straight to the screen with ACES tone mapping.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { VISUALS } from '../config.js';
+import { RT_SHARED } from './rayTracing/materials.js';
+import { TerrainDepthPrepass } from './depthPrepass.js';
 
 const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`;
 const DEPTH = `
@@ -58,6 +60,8 @@ const BLUR_FRAG = `
   }`;
 
 const COMPOSITE_FRAG = `
+  uniform sampler2D uRtPosition; uniform float uRtEnabled,uRtLocalReady;
+  uniform vec3 uRtOrigin,uRtCamera;
   varying vec2 vUv; uniform sampler2D tColor; uniform sampler2D tAO; uniform float uUseAO; uniform float uVignette; uniform float uAspect;
   void main() {
     vec4 c = texture2D( tColor, vUv );
@@ -66,7 +70,11 @@ const COMPOSITE_FRAG = `
     c.r = isnan( c.r ) ? 0.0 : c.r; c.g = isnan( c.g ) ? 0.0 : c.g; c.b = isnan( c.b ) ? 0.0 : c.b;
     c.rgb = clamp( c.rgb, 0.0, 256.0 );
     c.a = 1.0;
-    if ( uUseAO > 0.5 ) c.rgb *= texture2D( tAO, vUv ).r;
+    if ( uUseAO > 0.5 ) {
+      vec4 surface=texture2D(uRtPosition,vUv);
+      float traced = uRtEnabled * uRtLocalReady * step(.5, surface.a) * (1.0-smoothstep(80.0,120.0,length(surface.xyz+uRtOrigin-uRtCamera)));
+      c.rgb *= mix(texture2D(tAO,vUv).r,1.0,traced);
+    }
     vec2 p = ( vUv - 0.5 ) * vec2( uAspect, 1.0 );
     c.rgb *= mix( 1.0, smoothstep( 1.05, 0.25, length( p ) ), uVignette );
     gl_FragColor = c;
@@ -106,10 +114,11 @@ export class PostFX {
     const depthU = () => ({ tDepth: { value: null }, uLogFar: { value: 1 }, uProj: { value: new THREE.Vector2(1, 1) } });
     this.aoQuad = quad(AO_FRAG, { ...depthU(), uTexel: { value: new THREE.Vector2() }, uRadius: { value: P.aoRadius }, uIntensity: { value: P.aoIntensity }, uMaxDist: { value: P.aoMaxDistance } });
     this.blurQuad = quad(BLUR_FRAG, { ...depthU(), tAO: { value: null }, uTexel: { value: new THREE.Vector2() } });
-    this.compQuad = quad(COMPOSITE_FRAG, { tColor: { value: null }, tAO: { value: null }, uUseAO: { value: 0 }, uVignette: { value: P.vignette }, uAspect: { value: 1 } });
+    this.compQuad = quad(COMPOSITE_FRAG, { ...RT_SHARED, tColor: { value: null }, tAO: { value: null }, uUseAO: { value: 0 }, uVignette: { value: P.vignette }, uAspect: { value: 1 } });
     this.dofQuad = quad(DOF_FRAG, { ...depthU(), tColor: { value: null }, uTexel: { value: new THREE.Vector2() }, uFocus: { value: 7 }, uRange: { value: P.dofFocusRange }, uMaxBlur: { value: P.dofMaxBlur } });
     this.output = new OutputPass();
     this.output.renderToScreen = true;
+    this.prepass = new TerrainDepthPrepass(renderer);
   }
 
   /** (Re)build the render targets for a quality preset. */
@@ -136,15 +145,18 @@ export class PostFX {
 
   setSize(w, h) {
     this.w = Math.max(1, Math.floor(w)); this.h = Math.max(1, Math.floor(h));
+    this.prepass.setSize(this.w, this.h);
     if (this.q) this.configure(this.q);
   }
 
   /** opts: { free (bool), focus (m) } */
   render(opts = {}) {
     const { renderer, scene, camera, q } = this;
-    if (!q || !q.post) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
+    this.prepass.render(scene, camera);             // terrain depth first: hidden terrain skips its shading
+    if (!q || !q.post) { renderer.setRenderTarget(null); renderer.render(scene, camera); this.prepass.end(); return; }
     renderer.setRenderTarget(this.sceneRT);
     renderer.render(scene, camera);
+    this.prepass.end();
     const logFar = Math.log2(camera.far + 1), proj = camera.projectionMatrix.elements;
     const setDepth = (u) => { u.tDepth.value = this.sceneRT.depthTexture; u.uLogFar.value = logFar; u.uProj.value.set(proj[0], proj[5]); };
     // ambient occlusion at half resolution, then a depth-aware blur

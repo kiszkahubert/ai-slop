@@ -1,0 +1,7 @@
+[
+  {"script":"tests/ray-tracing-gpu.js","expect":"r.pass && r.rays===26"},
+  {"script":"tests/ray-tracing-local.js","expect":"r.pass"},
+  {"script":"tests/ray-tracing-tiles.js","expect":"r.pass"},
+  {"script":"tests/ray-tracing.js","expect":"r.pass && !r.active"},
+  {"shot":"ray-tracing-off.png"}
+]

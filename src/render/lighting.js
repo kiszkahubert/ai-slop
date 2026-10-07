@@ -5,9 +5,11 @@ import * as THREE from 'three';
 export function setupLighting(scene, quality) {
   const sun = new THREE.DirectionalLight(0xffffff, 3);
   sun.castShadow = true;
-  sun.shadow.bias = -0.00025; sun.shadow.normalBias = 0.035;
+  // With a 1,400 m depth range, the previous bias skipped ~35 cm of occlusion.
+  // Centimetre-scale bias keeps boot and rope shadows attached to the ground.
+  sun.shadow.bias = -0.00002; sun.shadow.normalBias = 0.015;
   scene.add(sun, sun.target);
-  const hemi = new THREE.HemisphereLight(0xbcd4ff, 0x9a9590, 0.8); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xbcd4ff, 0x4d5765, 0.6); scene.add(hemi);
   const moon = new THREE.DirectionalLight(0x8ea6d8, 0); moon.position.set(-3000, 6000, 2000); scene.add(moon);
   const headlamp = new THREE.SpotLight(0xfff4e0, 0, 70, 0.55, 0.6, 1.5);
   scene.add(headlamp, headlamp.target);

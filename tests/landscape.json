@@ -1,0 +1,4 @@
+[
+  {"script":"tests/landscape.js","expect":"r.pass && r.mismatches===0","save":"landscape-validation.json"},
+  {"script":"tests/landscape-lighting.js","expect":"r.pass","save":"landscape-lighting.json"}
+]

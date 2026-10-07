@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { mulberry32, makeNoise2D } from '../core/noise.js';
 import { clamp, smoothstep, fmt } from '../core/math.js';
 import { llToXZ } from './geo.js';
+import { iceTowerGeometry } from '../render/iceGeometry.js';
 
 const GORAK_SHEP = llToXZ(27.98, 86.83);           // trekkers arrive from here (south-west)
 const EBC_POINT = llToXZ(28.00722, 86.85944);      // the published Base Camp position (5,364 m): the far end of the tent strip
@@ -146,19 +147,6 @@ function signTexture(lines, opts = {}) {
   return t;
 }
 
-/** An ice tower: a chunky, irregular serac (a jittered, slightly leaning truncated cone with a ragged top). */
-function iceTowerGeometry(seed) {
-  const r = mulberry32(seed), geo = new THREE.CylinderGeometry(0.45, 1, 1, 7, 5, false), p = geo.attributes.position;
-  const lean = (r() - 0.5) * 0.3;
-  for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i) + 0.5, k = 1 + (r() - 0.5) * 0.55;
-    const top = y > 0.99 ? (r() - 0.3) * 0.35 : 0;                     // ragged crest
-    p.setXYZ(i, p.getX(i) * k + y * y * lean, p.getY(i) + top, p.getZ(i) * k * (0.75 + 0.25 * y));
-  }
-  geo.translate(0, 0.5, 0); geo.computeVertexNormals();
-  return geo;
-}
-
 /** Everything that stands at Base Camp and on the way to Crampon Point. */
 export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, makeLabel) {
   const r = mulberry32(plan.seed + 7), H = (x, z) => field.height(x, z);
@@ -168,9 +156,11 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
   for (const geo of [stoneGeo, chalkGeo]) geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3));
   const stones = inst(scene, stoneGeo, campVisuals.materials.stone, 4600);
   const chortens = inst(scene, chalkGeo, campVisuals.materials.whiteStone, 200);
-  const ice = new THREE.MeshStandardMaterial({ color: 0xe4f1fb, roughness: 0.32, metalness: 0, emissive: 0x0b2135, emissiveIntensity: 0.25 });
   const towerGeos = [iceTowerGeometry(1), iceTowerGeometry(2), iceTowerGeometry(3)];
-  const towers = towerGeos.map((g) => inst(scene, g, ice, 90));
+  const towers = towerGeos.map((g, i) => {
+    const mesh = inst(scene, g, world.iceVisuals.materials.tower, 90);
+    mesh.name = `Base Camp ice towers ${i + 1}`; mesh.userData.iceFormation = 'camp'; return mesh;
+  });
   const water = new THREE.MeshStandardMaterial({ color: 0x3fa7b8, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.88 });
   const ROCK = [0x6b6560, 0x7d766d, 0x5a5550, 0x8b847a];
 
@@ -298,5 +288,6 @@ export function buildBaseCamp(scene, field, routes, plan, world, prayerFlags, ma
     const l = makeLabel(scene, 'Crampon Point', fmt(y) + ' m'); l.position.set(c.x, y + 9, c.z); l.userData.range = 900; world.labels.push(l);
   }
   done(stones, chortens, ...towers);
+  for (const mesh of towers) world.iceVisuals.prepareMesh(mesh);
   return { towers: placed.length, compounds: plan.compounds.length };
 }

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { FAST_FORWARD, TERRAIN } from './config.js';
 import { CoreField, BackdropField } from './world/heightfield.js';
+import { createLandscapeField } from './world/landscape.js';
 import { loadRoutes, campsFor, CLIMBS } from './world/route.js';
 import { PEAKS, alignClimbingSummits } from './world/geo.js';
 import { TerrainLOD, coreTerrainOptions, backdropTerrainOptions } from './world/terrain.js';
@@ -12,9 +13,12 @@ import { Environment } from './world/environment.js';
 import { createClimber } from './render/climber.js';
 import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality } from './render/quality.js';
 import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/proceduralTextures.js';
+import { loadTerrainRock } from './render/terrainAssets.js';
 import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
 import { installAtmosphericFog } from './render/atmosphere.js';
 import { setupPostProcessing } from './render/postfx.js';
+import { FRAME_CAPS, FramePacer, initialFrameCap, rememberFrameCap } from './render/framePacing.js';
+import { RayTracingLighting } from './render/rayTracing/lighting.js';
 import { SHARED, patchSceneMaterials } from './render/shared.js';
 import { on } from './core/events.js';
 import { smoothstep } from './core/math.js';
@@ -59,7 +63,7 @@ const resize = () => {
 };
 addEventListener('resize', resize);
 
-let env, terrain, backdrop, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey;
+let env, terrain, backdrop, landscape, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing, rock;
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -75,12 +79,14 @@ async function boot() {
   field.refine(Object.values(routes), game.camps, 1, CLIMBS.map((c) => top(routes[c.route], c.id)), { pads: basePlan.pads, relief: basePlan.relief });
   console.log('terrain refined in', Math.round(performance.now() - t0), 'ms');
   game.field = field;
+  landscape = createLandscapeField(field, back);
   await step('Painting rock, snow and ice…');
-  const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy());
+  rock = await loadTerrainRock();
+  const layers = createTerrainLayerTextures(quality.textureSize, renderer.capabilities.getMaxAnisotropy(), rock);
   layerSize = quality.textureSize;
   await step('Shading the relief…');
-  relief = createReliefTexture(field, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
-  const macroShadow = new MacroShadow(field, 32);
+  relief = createReliefTexture(landscape, quality.reliefCell, quality.aoCell); reliefKey = quality.reliefCell + '/' + quality.aoCell;
+  const macroShadow = new MacroShadow(landscape, 32);
   SHARED.uMacroShadow.value = macroShadow.texture;
   await step('Building terrain chunks…');
   terrainMat = createTerrainMaterial({
@@ -88,17 +94,30 @@ async function boot() {
     microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512, exactGradients: quality.exactGradients,
   });
   await step('Fixing ropes, ladders and camps…');
-  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy() });
-  terrain = new TerrainLOD(scene, terrainMat, field, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
-  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
+  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy(), terrainMaterial: terrainMat });
+  terrain = new TerrainLOD(scene, terrainMat, landscape, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
+  backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(landscape));
   await step('Preparing fall and snow physics…');
   await initPhysics();
   game.physics = new PhysicsScene(game, { die });
   avalancheView = new AvalancheView(scene);
   env = new Environment(scene, renderer, { quality, field, macroShadow });
   climber = createClimber(scene, { renderer });
+  climber.group.userData.rtDynamic = true;
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
   postfx = setupPostProcessing(renderer, scene, camera, quality);
+  rayTracing = new RayTracingLighting(renderer, scene, camera, { field: landscape, back, world: game.world, terrainMaterial: terrainMat, sun: env.sun, quality: qualityName });
+  // A shader/driver failure must leave ordinary rendering available.
+  const shaderError = renderer.debug.onShaderError;
+  renderer.debug.onShaderError = (...args) => {
+    if (rayTracing.requested && rayTracing.ready) {
+      const [gl, program, vertex, fragment] = args;
+      console.warn('Ray-traced lighting shader:', gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment));
+      rayTracing.pendingFailure = 'GPU rejected a lighting shader'; return;
+    }
+    if (shaderError) shaderError(...args);
+    else { const [gl, program, vertex, fragment] = args; console.error('Shader compilation failed:', gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment)); }
+  };
   rig = new CameraRig(camera);
   newGame(1);
   initToasts(); initHUD(canvas); initScreens(canvas); initAudio();
@@ -113,9 +132,15 @@ async function boot() {
   requestAnimationFrame(frame);
 }
 
-let last = performance.now(), simTime = 0;
+let last = performance.now(), simTime = 0, frameCap = initialFrameCap();
+const pacer = new FramePacer(FRAME_CAPS[frameCap].fps);
+const MENUS = new Set(['title', 'paused', 'camp', 'won']);
+let labels = null, labelSources = null;
 function frame(now) {
   requestAnimationFrame(frame);
+  const menu = MENUS.has(game.mode);
+  if (!pacer.due(now, menu)) return;          // frame-rate limit: skip this display refresh entirely
+  rayTracing.paceMs = pacer.idleMs(menu);
   const dt = Math.min(0.05, (now - last) / 1000); last = now; simTime += dt;
   if (game.mode === 'play') {
     const ctl = manualControl();
@@ -126,24 +151,42 @@ function frame(now) {
   climber.update(dt, game.P, game.S, game.physics);
   rig.update(dt, simTime, game, climber);
   avalancheView.update(game.mode==='play'||game.mode==='dead'?dt:0, game.physics, camera);
+  if (avalancheView.group) avalancheView.group.userData.rtDynamic = true;
   game.world.campVisuals.update(camera);
   game.world.crevasseVisuals.update(camera);
   game.env.sunEl = env.update(dt, {
     time: game.time, weather: game.weather, env: game.env, player: game.P, camera,
     lampYaw: game.view.fp ? game.view.yaw : game.P.facing, lampPitch: game.view.fp ? game.view.pitch : -0.25,
-    labels: [...game.camps.map((c) => c.label), ...game.world.labels],
+    labels: currentLabels(),
   });
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
-  terrain.update(camera.position, 3);
-  backdrop.update(camera.position, 2);
+  const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
+  terrain.update(camera.position, 3, lodView);
+  backdrop.update(camera.position, 2, lodView);
   if (game.mode === 'play' || game.mode === 'camp' || game.mode === 'paused') updateHUD(dt);
   updateAudio(dt);
   const tr = performance.now();
   const firstPerson = game.view.fp && !game.P.falling && !game.P.recovery;
+  rayTracing.prepare(game.time);
   postfx.render({ free: game.free, focus: firstPerson ? 30 : rig.dist });
   api.renderMs = performance.now() - tr;
   api.frameMs = performance.now() - now;
 }
+
+/** Camp and summit name tags, rebuilt only when the camps or the world change (not every frame). */
+function currentLabels() {
+  if (!labels || labelSources[0] !== game.camps || labelSources[1] !== game.world.labels || labelSources[2] !== game.camps.length) {
+    labels = [...game.camps.map((c) => c.label), ...game.world.labels];
+    labelSources = [game.camps, game.world.labels, game.camps.length];
+  }
+  return labels;
+}
+function setFrameCap(name) {
+  if (!FRAME_CAPS[name]) return false;
+  frameCap = name; rememberFrameCap(name); pacer.setFps(FRAME_CAPS[name].fps);
+  return true;
+}
+on('setFrameCap', setFrameCap);
 
 // ---------------- debugging / automated tests
 const all = () => Object.values(game.routes).flatMap((r) => r.pts.filter((_, i) => Object.values(r.tags).includes(i)));
@@ -172,21 +215,26 @@ function setQuality(name) {
   postfx.configure(q);
   game.world.campVisuals.applyQuality(q);
   game.world.crevasseVisuals.applyQuality(q);
+  game.world.iceVisuals.applyQuality(q);
   game.world.campVisuals.update(camera, true);
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
-  if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy()); layerSize = q.textureSize; }
+  if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy(), rock); layerSize = q.textureSize; }
   if (reliefKey !== q.reliefCell + '/' + q.aoCell) {
-    relief = createReliefTexture(game.field, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
+    relief = createReliefTexture(landscape, q.reliefCell, q.aoCell); reliefKey = q.reliefCell + '/' + q.aoCell;
     opts.relief = relief.texture; opts.reliefRect = relief.rect;
   }
   updateTerrainMaterial(terrainMat, opts);
+  rayTracing?.configure(name);
   return true;
 }
 on('setQuality', setQuality);
+on('setRayTracing', value => rayTracing?.setEnabled(value));
+on('setRayTracingStrength', name => rayTracing?.setStrength(name));
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
-  get quality() { return qualityName; }, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  get quality() { return qualityName; }, get frameCap() { return frameCap; }, setFrameCap, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  get rayTracing() { return rayTracing; }, setRayTracing: value => rayTracing?.setEnabled(value),
   triggerAvalanche: (options) => game.physics.triggerAvalanche(options),
   forceFall: (options) => game.physics.startFall({ reason: 'test', ...options }),
   resetPhysics: () => { const ok = game.physics.resetExperiment(); refreshConditions(); return ok; },
@@ -194,7 +242,7 @@ const api = {
   get avalancheView() { return avalancheView; },
   crevasseAt: (x,z) => game.world.crevasseField.at(x,z)?.id ?? null,
   querySupport: (position,maxDrop) => querySupport(game,position,maxDrop),
-  get rig() { return rig; }, get terrain() { return terrain; }, renderMs: 0, frameMs: 0,
+  get rig() { return rig; }, get terrain() { return terrain; }, get backdropTerrain() { return backdrop; }, renderMs: 0, frameMs: 0,
 };
 window.__sim = api;
 

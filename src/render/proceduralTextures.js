@@ -4,6 +4,7 @@
 //  - the quilted down-jacket normal map, and a placeholder for the helmet logo decal.
 // All noise is tileable so the textures repeat seamlessly.
 import * as THREE from 'three';
+import { applyPhotographedRock } from './terrainAssets.js';
 import { mulberry32 } from '../core/noise.js';
 
 // ---------------- tileable noise
@@ -120,18 +121,20 @@ function rockLayer(S, rand) {
 
 function snowLayer(S, rand) {
   // wind-carved sastrugi: ridges stretched along x, over fine grain
-  const rip = stretched(S, 3, 22, rand), rip2 = stretched(S, 6, 40, rand), grain = fbm(S, 32, rand, 3), lumps = fbm(S, 4, rand, 4);
+  const rip = stretched(S, 4, 9, rand), rip2 = stretched(S, 7, 17, rand), grain = fbm(S, 32, rand, 3), lumps = fbm(S, 4, rand, 4);
+  const patches = fbm(S, 3, rand, 3);
   const h = new Float32Array(S * S);
   for (let i = 0; i < S * S; i++) {
-    const r = Math.pow(1 - Math.abs(rip[i] * 2 - 1), 3) * 0.6 + Math.pow(1 - Math.abs(rip2[i] * 2 - 1), 4) * 0.25;
-    h[i] = r * (0.5 + 0.5 * lumps[i]) + 0.15 * grain[i];
+    const r = Math.pow(1 - Math.abs(rip[i] * 2 - 1), 3) * 0.4 + Math.pow(1 - Math.abs(rip2[i] * 2 - 1), 4) * 0.12;
+    const carve = smooth(0.48, 0.72, patches[i]);
+    h[i] = r * carve + 0.12 * lumps[i] + 0.035 * grain[i];
   }
   const cav = blur(S, h, 3);
   return {
     h, cav,
     col: (i) => { const c = 0.965 + 0.035 * grain[i] - 0.03 * (cav[i] - h[i] > 0 ? 1 : 0); return [236 * c, 241 * c, 250 * c]; },
     rough: (i) => 0.78 - 0.18 * smooth(0.5, 0.9, h[i]),            // crests are wind-polished
-    normalStrength: 1.3,
+    normalStrength: 0.85,
   };
 }
 
@@ -145,7 +148,7 @@ function iceLayer(S, rand) {
   }
   const cav = blur(S, h, 3);
   return {
-    h, cav,
+    h, cav, crack, cloud: f,
     col: (i) => {
       const t = f[i], c = crack[i];
       return [150 + 60 * t - 50 * c, 190 + 40 * t - 35 * c, 222 + 25 * t - 15 * c];
@@ -153,6 +156,35 @@ function iceLayer(S, rand) {
     rough: (i) => 0.18 + 0.15 * b[i] + 0.45 * crack[i],
     normalStrength: 2.5,
   };
+}
+
+/** Snow-covered glacier blocks; exposed ice stays pale so the surface blends with surrounding snow. */
+export function createGlacierIceTextures(S, anisotropy = 1) {
+  const rand = mulberry32(73019), layer = iceLayer(S, rand), frost = fbm(S, 4, rand, 4), bubbles = worley(S, 48, rand);
+  const color = new Uint8Array(S * S * 4), rough = new Uint8Array(S * S * 4), normal = new Uint8Array(S * S * 4);
+  const height = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) {
+    const o = i * 4, crack = layer.crack[i], cloudy = layer.cloud[i];
+    const snow = smooth(0.4, 0.72, frost[i]), bubble = (1 - smooth(0.04, 0.12, bubbles.F1[i])) * (1 - snow);
+    const white = [238, 242, 246], ice = [215, 224, 230], exposed = (1 - smooth(0.3, 0.48, frost[i])) * 0.25;
+    for (let c = 0; c < 3; c++) color[o + c] = Math.min(255, white[c] - (1 - cloudy) * 4 - exposed * (white[c] - ice[c]) - crack * [12, 10, 8][c] + bubble * 1.5);
+    color[o + 3] = 255;
+    const roughness = clamp01(0.74 + snow * 0.15 + crack * 0.08 + bubble * 0.025);
+    rough.set([roughness * 255, roughness * 255, roughness * 255, 255], o);
+    height[i] = cloudy * 0.35 - crack * 0.22 + snow * 0.07 + bubble * 0.025;
+  }
+  sobelInto(S, height, 3 * (S / 512), normal, 0);
+  for (let i = 0; i < S * S; i++) {
+    const o = i * 4, x = normal[o] / 255 * 2 - 1, y = normal[o + 1] / 255 * 2 - 1;
+    normal[o + 2] = (Math.sqrt(Math.max(0, 1 - x * x - y * y)) * 0.5 + 0.5) * 255;
+    normal[o + 3] = rough[o + 1]; // Ground-blended ice reads roughness here to save a fragment sampler.
+  }
+  const make = (data, srgb = false) => {
+    const t = new THREE.DataTexture(data, S, S); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = anisotropy; t.needsUpdate = true; return t;
+  };
+  return { map: make(color, true), normalMap: make(normal), roughnessMap: make(rough) };
 }
 
 function moraineLayer(S, rand) {
@@ -174,7 +206,7 @@ function moraineLayer(S, rand) {
 }
 
 /** Builds the two terrain texture arrays at the given size (power of two). */
-export function createTerrainLayerTextures(S, anisotropy = 1) {
+export function createTerrainLayerTextures(S, anisotropy = 1, rock = null) {
   const rand = mulberry32(2024);
   const layers = [rockLayer(S, rand), snowLayer(S, rand), iceLayer(S, rand), moraineLayer(S, rand)];
   const albedo = new Uint8Array(S * S * 4 * layers.length), surface = new Uint8Array(S * S * 4 * layers.length);
@@ -190,6 +222,7 @@ export function createTerrainLayerTextures(S, anisotropy = 1) {
     }
     sobelInto(S, L.h, L.normalStrength * (S / 512), surface, off);
   });
+  applyPhotographedRock(S, albedo, surface, rock);
   const make = (data, srgb) => {
     const t = new THREE.DataArrayTexture(data, S, S, layers.length);
     t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;

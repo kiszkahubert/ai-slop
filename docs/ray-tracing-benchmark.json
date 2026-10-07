@@ -1,0 +1,45 @@
+{
+  "gpu": "ANGLE (AMD, AMD Radeon RX 6800 XT (0x000073BF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "drawingBuffer": [
+    1920,
+    1080
+  ],
+  "quality": "medium",
+  "warmupSeconds": 10,
+  "sampleSeconds": 60,
+  "off": {
+    "frames": 3601,
+    "seconds": 60.00379999999888,
+    "fps": 60.0128658518305,
+    "frameMedianMs": 16.699999999254942,
+    "frameP95Ms": 17.40000000037253,
+    "renderMedianMs": 3,
+    "lightingGpuMedianMs": null
+  },
+  "on": {
+    "frames": 3602,
+    "seconds": 60.01230000000074,
+    "fps": 60.021029022383,
+    "frameMedianMs": 16.699999999254942,
+    "frameP95Ms": 17.799999998882413,
+    "renderMedianMs": 4.5,
+    "lightingGpuMedianMs": 4.741503077494767
+  },
+  "scale": 0.25,
+  "localUpdateStride": 2,
+  "memoryMiB": 248.86820030212402,
+  "triangles": 2603030,
+  "coverageAtCamera": [
+    16,
+    1,
+    0.914732038974762,
+    1
+  ],
+  "incrementalMedianMs": 0,
+  "target60Fps": true,
+  "lightingBudget5Ms": true
+}

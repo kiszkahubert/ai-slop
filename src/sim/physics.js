@@ -28,11 +28,13 @@ export class PhysicsScene {
     if (!this.g.free) emit(type, data);
   }
   groundHeight(x,z) {
-    return this.g.field.height(x,z)+(!this.g.world?.crevasseField?.at(x,z) && this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    const base=this.g.field.height(x,z)+(!this.g.world?.crevasseField?.at(x,z) && this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    return Math.max(base,this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity);
   }
   contactHeight(x,z,y=this.g.P.y+1) {
     if(this.g.world?.crevasseField?.at(x,z))return querySupport(this.g,{x,y,z},100)?.height ?? -Infinity;
-    return triangleHeight(this.g.field,x,z)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    const base=triangleHeight(this.g.field,x,z)+(this.avalanche?.settled ? this.avalanche.sample(x,z).depth : 0);
+    return Math.max(base,this.g.world?.routeFeatures?.sample(x,z)?.height??-Infinity);
   }
   disposeBody() {
     this.world?.free(); this.queue?.free(); this.world=null; this.queue=null;
@@ -50,7 +52,8 @@ export class PhysicsScene {
     if (before) { Object.assign(this.g.P,before.P); Object.assign(this.g.view,before.view); }
     if(this.g.P.ski)Object.assign(this.g.P.ski,{air:null,u:0,w:0,speed:0});
     const safe=this.g.world?.crevasseField?.safePosition(this.g.P.x,this.g.P.z);
-    if(safe)Object.assign(this.g.P,safe);else this.g.P.y=this.g.field.height(this.g.P.x,this.g.P.z);
+    if(safe)Object.assign(this.g.P,safe);
+    if(!this.g.world?.crevasseField?.at(this.g.P.x,this.g.P.z))this.g.P.y=this.groundHeight(this.g.P.x,this.g.P.z);
     this.g.auto=null; emit('teleported');
     toast('Snow and fall experiment reset.', 'info', 3);
     return true;
@@ -61,7 +64,7 @@ export class PhysicsScene {
     if (this.avalanche?.sample(P.x,P.z).depth>.2 && !this.g.free && !this.g.debug) { toast('Move off the deposited snow before another release.', 'warn', 3); return false; }
     const release=source || findRelease(field,P.x,P.z);
     if (!release) { toast('No suitable snow slope uphill here. Try the Lhotse Face or Nuptse north face.', 'info', 4); return false; }
-    this.preTrigger={ P:{ x:P.x,y:field.height(P.x,P.z),z:P.z,facing:P.facing,clipped:P.clipped },view:{...this.g.view} };
+    this.preTrigger={ P:{ x:P.x,y:this.groundHeight(P.x,P.z),z:P.z,facing:P.facing,clipped:P.clipped },view:{...this.g.view} };
     this.avalanche=new Avalanche(field,release,{seed,crevasseField:this.g.world?.crevasseField,...options});
     this.burial=null; this.g.auto=null;
     this.note('avalanche',{ x:release.x,z:release.z,volume:this.avalanche.initialVolume });
@@ -148,12 +151,22 @@ export class PhysicsScene {
     for(let j=cz-1;j<=cz+1;j++) for(let i=cx-1;i<=cx+1;i++) {
       const name=key(i,j); if(this.tiles.has(name)) continue;
       const x0=field.x0+i*size,z0=field.z0+j*size,positions=[],buckets={snow:[],ice:[],rock:[]};
-      for(let z=0;z<=cells;z++) for(let x=0;x<=cells;x++) positions.push(x0+x*cell-this.origin.x,this.groundHeight(x0+x*cell,z0+z*cell)-this.origin.y,z0+z*cell-this.origin.z);
+      for(let z=0;z<=cells;z++) for(let x=0;x<=cells;x++){
+        const wx=x0+x*cell,wz=z0+z*cell;
+        // Local shelves have their own exact colliders below; do not smear them
+        // into the four-metre terrain collision grid.
+        const h=field.height(wx,wz)+(deposit&&!this.g.world?.crevasseField?.at(wx,wz)?deposit.sample(wx,wz).depth:0);
+        positions.push(wx-this.origin.x,h-this.origin.y,wz-this.origin.z);
+      }
       for(let z=0;z<cells;z++) for(let x=0;x<cells;x++) {
         const a=z*(cells+1)+x,b=a+1,c=a+cells+1,d=c+1;
         buckets[surfaceType(field,x0+(x+.5)*cell,z0+(z+.5)*cell)].push(a,c,b,b,c,d);
       }
       const colliders=[];
+      for(const r of this.g.world?.routeFeatures?.records||[])if(r.x>=x0&&r.x<x0+size&&r.z>=z0&&r.z<z0+size){
+        const vertices=Float32Array.from(r.position,(value,k)=>value-[this.origin.x,this.origin.y,this.origin.z][k%3]);
+        colliders.push(this.world.createCollider(RAPIER.ColliderDesc.trimesh(vertices,r.index).setFriction(FALL.friction.snow).setRestitution(FALL.restitution).setCollisionGroups(0x00020001)));
+      }
       const holes=this.g.world?.crevasseField,candidates=holes?.nearby({x0,x1:x0+size,z0,z1:z0+size})||[];
       for(const [type,idx] of Object.entries(buckets)) if(idx.length) {
         let vertices=positions,indices=idx;

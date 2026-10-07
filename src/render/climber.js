@@ -14,9 +14,28 @@ import { createIceAxe } from './iceAxe.js';
 import { createPuffyNormalMap } from './proceduralTextures.js';
 import { BODY, AXE_PICK } from '../sim/body.js';
 import { BodyPoseRig } from './bodyPose.js';
+import { groundHeight } from '../sim/surface.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+// Baffles alter the clothing silhouette as well as its normal map. Rounded ends
+// overlap the existing elbow/knee pivots, retaining all physical pose bindings.
+export function garmentGeometry(radius,length,baffles) {
+  const profile=[],steps=baffles*10;
+  for(let k=0;k<=steps;k++){
+    const u=k/steps,cap=Math.sqrt(Math.max(0,1-Math.pow(Math.max(0,Math.abs(u-.5)-.35)/.15,2)));
+    const fold=.94+.12*Math.pow(Math.sin(u*baffles*Math.PI),2);
+    profile.push(new THREE.Vector2(radius*cap*fold*(.92+.08*u),(u-.5)*length));
+  }
+  return new THREE.LatheGeometry(profile,20);
+}
+
+export function legAngles(distance,forward,upper=.435,lower=.395) {
+  const d=clamp(Math.hypot(distance,forward),.12,upper+lower-.001);
+  const knee=-Math.acos(clamp((d*d-upper*upper-lower*lower)/(2*upper*lower),-1,1));
+  return {hip:Math.atan2(forward,distance)+Math.atan2(lower*Math.sin(-knee),upper+lower*Math.cos(knee)),knee};
+}
 
 /** A small sky-to-snow gradient environment for reflections on metal, goggles and the oxygen bottle. */
 function makeEnvMap(renderer) {
@@ -90,11 +109,20 @@ export function createClimber(scene, { renderer = null } = {}) {
   // ---------------- torso: quilted jacket (lathe), pack, straps
   const spine = grp(pelvis, 0, 0.12, 0);
   const chest = grp(spine, 0, 0.0, 0);
-  const torsoProfile = [[0.15, 0], [0.18, 0.05], [0.198, 0.15], [0.212, 0.27], [0.218, 0.37], [0.205, 0.45], [0.165, 0.505], [0.09, 0.53], [0.06, 0.535]]
-    .map(([r, y]) => new THREE.Vector2(r, y));
+  const contour=[[0,.16],[.05,.19],[.15,.22],[.27,.238],[.37,.238],[.45,.22],[.505,.165],[.53,.09],[.535,.06]];
+  const torsoProfile=[];
+  for(let i=0;i<=80;i++){
+    const y=i/80*.535,k=Math.min(contour.length-2,contour.findIndex((v,j)=>j<contour.length-1&&y<=contour[j+1][0]));
+    const a=contour[Math.max(0,k)],b=contour[Math.max(0,k)+1],r=THREE.MathUtils.lerp(a[1],b[1],(y-a[0])/(b[0]-a[0]));
+    torsoProfile.push(new THREE.Vector2(r*(.98+.045*Math.pow(Math.sin(y/.535*8*Math.PI),2)),y));
+  }
   const torso = add(chest, new THREE.LatheGeometry(torsoProfile, 28), M.jacket); torso.scale.set(1.06, 1, 0.74);
   add(chest, new THREE.CylinderGeometry(0.075, 0.09, 0.07, 18), M.jacket, 0, 0.54, 0);           // collar
   add(chest, new THREE.BoxGeometry(0.012, 0.42, 0.01), M.trim, 0, 0.27, -0.158);                   // zip
+  for(const side of [-1,1]){
+    add(chest,new RoundedBoxGeometry(.10,.13,.024,3,.015),M.jacket,side*.12,.28,-.177).rotation.z=side*.12;
+    add(chest,new THREE.BoxGeometry(.07,.008,.005),M.trim,side*.12,.327,-.194).rotation.z=side*.12;
+  }
   const pack = grp(chest, 0, 0.27, 0.235);
   add(pack, new RoundedBoxGeometry(0.36, 0.5, 0.2, 4, 0.05), M.pack);
   add(pack, new RoundedBoxGeometry(0.34, 0.09, 0.22, 3, 0.04), M.pack, 0, 0.27, -0.005);           // lid
@@ -115,6 +143,7 @@ export function createClimber(scene, { renderer = null } = {}) {
   // ---------------- head: balaclava, goggles, oxygen mask, helmet
   const neck = grp(chest, 0, 0.50, 0);
   add(neck, new THREE.CylinderGeometry(0.05, 0.06, 0.08, 14), M.balaclava, 0, 0.03, 0);
+  add(neck,new THREE.SphereGeometry(.14,22,16),M.jacket,0,.10,.055).scale.set(1,1.15,.72);
   const head = grp(neck, 0, 0.16, 0);
   add(head, new THREE.SphereGeometry(0.105, 24, 18), M.balaclava).scale.set(0.95, 1.08, 1.0);
   add(head, new THREE.SphereGeometry(0.04, 12, 10), M.skin, 0, -0.01, -0.085).scale.set(1.2, 0.6, 0.5);   // cheeks between goggles and buff
@@ -131,10 +160,10 @@ export function createClimber(scene, { renderer = null } = {}) {
   const arms = [-1, 1].map((s) => {
     const shoulder = grp(chest, 0.32 * s, 0.39, 0);
     add(shoulder, new THREE.SphereGeometry(0.078, 16, 12), M.jacket).scale.set(1.5, 1, 1);
-    add(shoulder, new THREE.CapsuleGeometry(0.066, 0.263, 6, 14), M.sleeves, 0, -0.1975, 0);
+    add(shoulder, garmentGeometry(.09,.395,5), M.sleeves, 0, -0.1975, 0);
     const elbow = grp(shoulder, 0, -0.395, 0);
     add(elbow, new THREE.SphereGeometry(0.067, 16, 12), M.sleeves); // suit stays continuous as the joint bends
-    add(elbow, new THREE.CapsuleGeometry(0.056, 0.213, 6, 14), M.sleeves, 0, -0.1625, 0);
+    add(elbow, garmentGeometry(.075,.325,4), M.sleeves, 0, -0.1625, 0);
     add(elbow, new THREE.CylinderGeometry(0.06, 0.055, 0.05, 14), M.trim, 0, -0.29, 0);           // glove cuff
     const wrist = grp(elbow, 0, -0.325, 0);
     add(wrist, new RoundedBoxGeometry(0.085, 0.105, 0.065, 3, 0.03), M.glove, 0, -0.045, -0.005);
@@ -159,15 +188,15 @@ export function createClimber(scene, { renderer = null } = {}) {
   const cramponGeo = mergeGeometries(spikes);
   const legs = [-1, 1].map((s) => {
     const hip = grp(pelvis, 0.12 * s, -0.01, 0);
-    add(hip, new THREE.CapsuleGeometry(0.086, 0.263, 6, 14), M.pants, 0, -0.2175, 0);
+    add(hip, garmentGeometry(.108,.435,5), M.pants, 0, -0.2175, 0);
     const knee = grp(hip, 0, -0.435, 0);
     add(knee, new THREE.SphereGeometry(0.087, 16, 12), M.pants);
-    add(knee, new THREE.CapsuleGeometry(0.07, 0.255, 6, 14), M.pants, 0, -0.1975, 0);
+    add(knee, garmentGeometry(.085,.395,4), M.pants, 0, -0.1975, 0);
     const ankle = grp(knee, 0, -0.395, 0);
     add(ankle, new THREE.CylinderGeometry(0.074, 0.068, 0.2, 16), M.boot, 0, 0.07, 0.0);                    // cuff / gaiter
     add(ankle, new THREE.CylinderGeometry(0.076, 0.076, 0.03, 16), M.trim, 0, 0.16, 0.0);                   // gaiter top
     add(ankle, new RoundedBoxGeometry(0.122, 0.1, 0.3, 3, 0.04), M.boot, 0, -0.025, -0.045);
-    add(ankle, new RoundedBoxGeometry(0.128, 0.022, 0.31, 2, 0.008), M.sole, 0, -0.07, -0.045);
+    add(ankle, new RoundedBoxGeometry(0.128, 0.022, 0.31, 2, 0.008), M.sole, 0, -0.07, -0.045).name='climber-boot-sole';
     add(ankle, new THREE.BoxGeometry(0.13, 0.012, 0.012), M.strap, 0, -0.005, -0.12);                       // crampon strap
     add(ankle, cramponGeo, M.metal);
     return { hip, knee, ankle };
@@ -271,6 +300,30 @@ export function createClimber(scene, { renderer = null } = {}) {
       AR.elbow.rotation.x = 0.3 + 0.35 * steepS;
       AR.shoulder.rotation.z = 0.08;
       axe.rotation.x = -(AR.shoulder.rotation.x + AR.elbow.rotation.x) + 0.12 + 0.55 * steepS + 0.12 * s * mv;
+      if(physics?.g && !P.onLadder){
+        root.updateMatrixWorld(true);
+        const targets=legs.map((leg,i)=>{
+          const foot=leg.ankle.getWorldPosition(new THREE.Vector3());
+          const swing=Math.max(0,(i===0?-c:c))*mv*.12;
+          foot.y=groundHeight(physics.g,foot.x,foot.z)+.08+swing;
+          return foot;
+        });
+        // Lower the hips enough for the downhill leg to reach without stretching.
+        let drop=0;
+        legs.forEach((leg,i)=>{const hip=leg.hip.getWorldPosition(new THREE.Vector3()),foot=targets[i];
+          const reach=Math.sqrt(Math.max(.01,.829*.829-(hip.z-foot.z)**2-(hip.x-foot.x)**2));
+          drop=Math.max(drop,hip.y-foot.y-reach);
+        });
+        body.position.y-=clamp(drop,0,.3);root.updateMatrixWorld(true);
+        legs.forEach((leg,i)=>{
+          const target=leg.hip.worldToLocal(targets[i].clone());
+          // Undo the current hip rotation to solve in its parent-aligned frame.
+          target.applyQuaternion(leg.hip.quaternion);
+          const angles=legAngles(-target.y,-target.z);
+          leg.hip.rotation.x=angles.hip;leg.knee.rotation.x=angles.knee;
+          leg.ankle.rotation.x=-(angles.hip+angles.knee);
+        });
+      }
       if (P.recovery) {
         chest.scale.set(1, 1, 1);
         const t = clamp(P.recovery.t / 0.8, 0, 1);
