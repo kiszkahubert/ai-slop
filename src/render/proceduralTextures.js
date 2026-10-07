@@ -148,7 +148,7 @@ function iceLayer(S, rand) {
   }
   const cav = blur(S, h, 3);
   return {
-    h, cav,
+    h, cav, crack, cloud: f,
     col: (i) => {
       const t = f[i], c = crack[i];
       return [150 + 60 * t - 50 * c, 190 + 40 * t - 35 * c, 222 + 25 * t - 15 * c];
@@ -156,6 +156,35 @@ function iceLayer(S, rand) {
     rough: (i) => 0.18 + 0.15 * b[i] + 0.45 * crack[i],
     normalStrength: 2.5,
   };
+}
+
+/** Snow-covered glacier blocks; exposed ice stays pale so the surface blends with surrounding snow. */
+export function createGlacierIceTextures(S, anisotropy = 1) {
+  const rand = mulberry32(73019), layer = iceLayer(S, rand), frost = fbm(S, 4, rand, 4), bubbles = worley(S, 48, rand);
+  const color = new Uint8Array(S * S * 4), rough = new Uint8Array(S * S * 4), normal = new Uint8Array(S * S * 4);
+  const height = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) {
+    const o = i * 4, crack = layer.crack[i], cloudy = layer.cloud[i];
+    const snow = smooth(0.4, 0.72, frost[i]), bubble = (1 - smooth(0.04, 0.12, bubbles.F1[i])) * (1 - snow);
+    const white = [238, 242, 246], ice = [215, 224, 230], exposed = (1 - smooth(0.3, 0.48, frost[i])) * 0.25;
+    for (let c = 0; c < 3; c++) color[o + c] = Math.min(255, white[c] - (1 - cloudy) * 4 - exposed * (white[c] - ice[c]) - crack * [12, 10, 8][c] + bubble * 1.5);
+    color[o + 3] = 255;
+    const roughness = clamp01(0.74 + snow * 0.15 + crack * 0.08 + bubble * 0.025);
+    rough.set([roughness * 255, roughness * 255, roughness * 255, 255], o);
+    height[i] = cloudy * 0.35 - crack * 0.22 + snow * 0.07 + bubble * 0.025;
+  }
+  sobelInto(S, height, 3 * (S / 512), normal, 0);
+  for (let i = 0; i < S * S; i++) {
+    const o = i * 4, x = normal[o] / 255 * 2 - 1, y = normal[o + 1] / 255 * 2 - 1;
+    normal[o + 2] = (Math.sqrt(Math.max(0, 1 - x * x - y * y)) * 0.5 + 0.5) * 255;
+    normal[o + 3] = rough[o + 1]; // Ground-blended ice reads roughness here to save a fragment sampler.
+  }
+  const make = (data, srgb = false) => {
+    const t = new THREE.DataTexture(data, S, S); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = anisotropy; t.needsUpdate = true; return t;
+  };
+  return { map: make(color, true), normalMap: make(normal), roughnessMap: make(rough) };
 }
 
 function moraineLayer(S, rand) {

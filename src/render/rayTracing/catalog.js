@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { patchRayTracingMaterial } from './materials.js';
 import { RT_LIMITS } from './settings.js';
+import { iceGroundDescriptor } from '../iceGround.js';
 
 export function isDynamic(o) { for(let p=o;p;p=p.parent)if(p.userData.rtDynamic)return true;return false; }
 export function isVisible(o) { for(let p=o;p;p=p.parent)if(!p.visible)return false;return true; }
@@ -27,25 +28,26 @@ export class SceneCatalog {
       for(let i=0;i<src.count;i++){v.set(src.getX(i),src.getY(i));if(mat.map)v.applyMatrix3(mat.map.matrix);uv[i*2]=v.x;uv[i*2+1]=v.y;}}
     a={position:pos.array,index:geo.index?.array,vertexColor,uv};byMat.set(mat,a);return a;
   }
-  descriptor(geo,mat,matrix,tint=new THREE.Color(1,1,1)) {
+  descriptor(geo,mat,matrix,tint=new THREE.Color(1,1,1),mesh,instance=0) {
     const color=mat.color.clone().multiply(tint).multiplyScalar(1-(mat.metalness||0)),a=this.sharedArrays(geo,mat);
-    return {position:a.position,index:a.index,color:[...color.toArray(),this.layer(mat.map,mat)],vertexColor:a.vertexColor,uv:a.uv,matrix:matrix.toArray()};
+    const ground=mat.userData.iceBlend&&mesh?iceGroundDescriptor(mesh,matrix,instance):{};
+    return {position:a.position,index:a.index,color:[...color.toArray(),this.layer(mat.map,mat)],vertexColor:a.vertexColor,uv:a.uv,matrix:matrix.toArray(),...ground};
   }
   region(origin) {
     const result=[],box=new THREE.Box3(new THREE.Vector3(origin[0]-512,-10000,origin[1]-512),new THREE.Vector3(origin[0]+512,20000,origin[1]+512));
     const matrix=new THREE.Matrix4(),sphere=new THREE.Sphere(),tint=new THREE.Color();this.scene.updateMatrixWorld(true);
     // Pebbles, pegs and other small parts barely change the light but dominate the triangle count.
-    const add=(geo,mat,m,t=new THREE.Color(1,1,1),keepSmall=false)=>{
+    const add=(geo,mat,m,t=new THREE.Color(1,1,1),keepSmall=false,mesh,instance)=>{
       if(!geo.boundingSphere)geo.computeBoundingSphere();sphere.copy(geo.boundingSphere).applyMatrix4(m);
       if(!keepSmall&&sphere.radius<RT_LIMITS.minPrimitiveRadius){this.skipped++;return;}
-      if(box.intersectsSphere(sphere))result.push(this.descriptor(geo,mat,m,t));
+      if(box.intersectsSphere(sphere))result.push(this.descriptor(geo,mat,m,t,mesh,instance));
     };
     this.skipped=0;
     const camp=this.world.campVisuals,cv=this.world.crevasseVisuals;
     this.scene.traverse(o=>{
       if(!eligible(o)||o.material.userData.rtTerrain||o.parent===camp.root||o.parent===cv.root)return;
       if(!o.geometry.attributes.position)return;
-      if(o.isInstancedMesh){for(let i=0;i<o.count;i++){o.getMatrixAt(i,matrix);matrix.premultiply(o.matrixWorld);tint.setRGB(1,1,1);if(o.instanceColor)o.getColorAt(i,tint);add(o.geometry,o.material,matrix,tint);}}
+      if(o.isInstancedMesh){for(let i=0;i<o.count;i++){o.getMatrixAt(i,matrix);matrix.premultiply(o.matrixWorld);tint.setRGB(1,1,1);if(o.instanceColor)o.getColorAt(i,tint);add(o.geometry,o.material,matrix,tint,false,o,i);}}
       else add(o.geometry,o.material,o.matrixWorld);
     });
     // Camp parts are independent of the display LOD and current instance counts: the detailed model near the
@@ -86,6 +88,11 @@ export class SceneCatalog {
     });
     const t=new THREE.DataArrayTexture(data,size,size,count);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;
     t.minFilter=THREE.LinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;this.array=t;return t;
+  }
+  invalidateTextures() {
+    this.arrayCount = -1; this.textureLayers.clear();
+    this.materialTextures = this.materialTextures.map((t, i) => this.textureOwners[i]?.map || t);
+    this.materialTextures.forEach((t, i) => this.textureLayers.set(t, i));
   }
   dispose(){this.restore();this.array?.dispose();this.array=null;this.arrayCount=-1;this.shared.clear();this.textureLayers.clear();this.materialTextures=[];this.textureOwners=[];}
 }

@@ -67,6 +67,7 @@ export class RayTracingLighting {
     RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;this.notify();return this.requested;
   }
   configure(name) {this.quality=name;this.historyValid=false;this.rebuildProxies=true;this.resetCaches();
+    this.catalog.invalidateTextures();
     if(this.snapshot)this.localQuad.material.uniforms.uPropAlbedo.value=this.catalog.makeTextureArray();this.notify();}
   fail(message) {
     this.failed=message;RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;
@@ -136,7 +137,7 @@ export class RayTracingLighting {
   }
   installSnapshot(s) {
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(s.position,3));
-    g.setAttribute('color',new THREE.BufferAttribute(s.color,4));g.setAttribute('uv',new THREE.BufferAttribute(s.uv,2));
+    g.setAttribute('color',new THREE.BufferAttribute(s.color,4));g.setAttribute('uv',new THREE.BufferAttribute(s.uv,4));
     const bvh=MeshBVH.deserialize(s.serialized,g,{setIndex:true}),gpu=new MeshBVHUniformStruct();gpu.updateFrom(bvh);
     const colors=new FloatVertexAttributeTexture(),uvs=new FloatVertexAttributeTexture();colors.updateFrom(g.attributes.color);uvs.updateFrom(g.attributes.uv);
     halfTexture(colors);halfTexture(uvs);

@@ -14,6 +14,8 @@ import { CrevasseVisuals } from '../render/crevasses.js';
 import { createFlagMaterial, prepareFlagMesh } from '../render/flags.js';
 import { buildRouteWear } from '../render/routeWear.js';
 import { RouteFeatures } from './routeFeatures.js';
+import { IceVisuals } from '../render/iceVisuals.js';
+import { iceFaceUVs } from '../render/iceGeometry.js';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
@@ -57,11 +59,12 @@ export function crevasseLocal(cv, x, z, pad = 0) {
 }
 
 /** opts: { backdrop, basePlan, seed, quality (graphics preset), anisotropy } */
-export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5, quality, anisotropy = 1 } = {}) {
+export function buildProps(scene, field, routes, camps, { backdrop = null, basePlan = null, seed = 5, quality, anisotropy = 1, terrainMaterial } = {}) {
   const r = mulberry32(seed);
   const H = (x, z) => field.height(x, z);
   const world = { camps, ropes: [], crevasses: [], seracGrid: new Map(), labels: [] };
   const campVisuals = world.campVisuals = new CampVisuals(scene, field, { quality, anisotropy });
+  world.iceVisuals = new IceVisuals({ quality, anisotropy, field, terrainMaterial });
   const box = new THREE.BoxGeometry(1, 1, 1);
 
   // ---------------- camps
@@ -186,7 +189,9 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
     sp.setXYZ(i, _v.x * k, _v.y * k * (_v.y > 0.5 ? 0.8 : 1), _v.z * k);
   }
   sg.computeVertexNormals();
-  const seracs = instanced(scene, sg, new THREE.MeshStandardMaterial({ color: 0xcfe9f6, roughness: 0.25, flatShading: true }), 1100);
+  iceFaceUVs(sg, [2, 4, 2]);
+  const seracs = instanced(scene, sg, world.iceVisuals.materials.serac, 1100);
+  seracs.name = 'Icefall seracs'; seracs.userData.iceFormation = 'icefall';
   tries = 0;
   while (seracs.count < 1100 && tries++ < 12000) {
     const s = iceA - 100 + r() * (iceB - iceA + 60), p = m.at(s);
@@ -215,6 +220,7 @@ export function buildProps(scene, field, routes, camps, { backdrop = null, baseP
   }
 
   finish(poles, flags, rungs, seracs, rocks);
+  world.iceVisuals.prepareMesh(seracs);
   world.memorials = memorials(scene, field, placeMemorials(routes, field), r, world);
   if (basePlan) world.baseCamp = buildBaseCamp(scene, field, routes, basePlan, world, prayerFlags, makeLabel);
   campVisuals.finish();

@@ -1,4 +1,5 @@
 import { terrainSampleShader } from '../../world/terrainMaterial.js';
+import { ICE_GROUND_GLSL } from '../iceGround.js';
 import { HEIGHT_TRACE, RANDOM_GLSL } from './heightShader.js';
 import { shaderStructs, shaderIntersectFunction } from '../../../assets/render/rt-runtime.js';
 
@@ -68,13 +69,23 @@ uniform BVH uBvh;
 ${RANDOM_GLSL}
 ${OCT}
 ${terrainSampleShader()}
+${ICE_GROUND_GLSL}
 bool localHit(vec3 p,vec3 d,float limit,out vec3 q,out vec3 n,out vec3 alb){
   uvec4 face;vec3 bary;float side,dist;
   bool hit=bvhIntersectFirstHit(uBvh,p-uOrigin,d,face,n,bary,side,dist);
   if(!hit||dist>limit)return false;
   q=p+d*dist;
   vec4 col=textureSampleBarycoord(uColors,bary,face.xyz);alb=col.rgb;
-  if(col.a< -0.5){
+  if(col.a< -1.5){
+    vec4 uv=textureSampleBarycoord(uUvs,bary,face.xyz);
+    alb=textureLod(uPropAlbedo,vec3(uv.xy,-col.a-2.0),0.0).rgb;
+    vec3 base=vec3(q.x,q.y-col.r,q.z);float blend=iceGroundWeight(base,col.r,uv.z);
+    if(blend>0.001){
+      float footprint=max(.05,dist*.01);vec3 ground;
+      secondaryTerrain(base,iceGroundNormal(uv.w),col.g,col.b,length(q-uCamera),vec3(footprint,0,0),vec3(0,0,footprint),ground);
+      alb=mix(alb,ground,blend);
+    }
+  }else if(col.a< -0.5){
     vec2 uv=(q.xz-uMaskRect.xy)*uMaskRect.zw,mask=texture2D(uMasks,clamp(uv,0.0,1.0)).rg;
     float footprint=max(.05,dist*.01);secondaryTerrain(q,n,mask.r,mask.g,length(q-uCamera),vec3(footprint,0,0),vec3(0,0,footprint),alb);
   }else if(col.a>0.5){vec2 uv=textureSampleBarycoord(uUvs,bary,face.xyz).xy;alb*=textureLod(uPropAlbedo,vec3(uv,col.a-1.0),0.0).rgb;}
