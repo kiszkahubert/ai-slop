@@ -72,6 +72,34 @@ point; they still require mountaineering equipment and adaptation to this body,
 axe contact and recovery system. Improving the existing rig preserves those
 animations and physics bindings without adding another animation runtime.
 
+### Glacier ice props
+
+Base Camp towers now build closed blocks from shared logical vertices before
+splitting face normals and UV seams. The three seeded variants have irregular
+shoulders and fractured crests; their placement random stream, instance matrices
+and collision records are preserved. Icefall serac positions are also preserved.
+Both formations share offline procedural albedo, normal and roughness maps for
+snow-white frost with subtle exposed ice, cracks and bubbles. Standard opaque materials retain
+instancing, macro shadows and traced lighting without emissive fill.
+
+The feet borrow the terrain's albedo and roughness at their world-space ground
+contact, including the glacier and rock masks. A soft, irregular fade over the
+lowest 1.4–4.5 metres brings Base Camp moraine into the white ice above. Per-instance
+footprint heights follow sloping ground without moving the formations. The
+display and traced bounce shaders share this fade and terrain sampler. Terrain
+maps remain owned by the terrain renderer and follow its live quality updates.
+Ice normals also carry roughness in their alpha channel, keeping the combined
+terrain and traced material within the 16-fragment-sampler limit.
+
+Ice maps follow the existing 256 / 512 / 1024 quality sizes. Replaced maps are
+disposed, and quality changes invalidate the traced albedo array as well. Run
+`npm run test:ice` for browser checks of sharing, quality changes and traced texture
+pixels. Run `npm run capture:ice` with `HARDWARE=1` and `RT=1` in the environment
+to capture both areas from three sides
+at 07:12 and noon, with tracing off and on, under `tests/out/ice/`; it records
+placement/collision hashes and requires converged traced coverage. Set `CHROMIUM`
+to an installed Chromium executable when Playwright's bundled browser is absent.
+
 ## Atmosphere
 
 Clear-weather fog has a nearby contrast fade, with stronger blue separation at

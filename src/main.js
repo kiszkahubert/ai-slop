@@ -91,7 +91,7 @@ async function boot() {
     microDetail: quality.microDetail, antiTiling: quality.textureSize >= 512, exactGradients: quality.exactGradients,
   });
   await step('Fixing ropes, ladders and camps…');
-  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy() });
+  game.world = buildProps(scene, field, routes, game.camps, { backdrop: back, basePlan, quality, anisotropy: renderer.capabilities.getMaxAnisotropy(), terrainMaterial: terrainMat });
   terrain = new TerrainLOD(scene, terrainMat, field, { ...coreTerrainOptions(), crevasses: game.world.crevasseField });
   backdrop = new TerrainLOD(scene, terrainMat, back, backdropTerrainOptions(field));
   await step('Preparing fall and snow physics…');
@@ -191,6 +191,7 @@ function setQuality(name) {
   postfx.configure(q);
   game.world.campVisuals.applyQuality(q);
   game.world.crevasseVisuals.applyQuality(q);
+  game.world.iceVisuals.applyQuality(q);
   game.world.campVisuals.update(camera, true);
   const opts = { microDetail: q.microDetail, antiTiling: q.textureSize >= 512, exactGradients: q.exactGradients };
   if (layerSize !== q.textureSize) { opts.layers = createTerrainLayerTextures(q.textureSize, renderer.capabilities.getMaxAnisotropy(), rock); layerSize = q.textureSize; }

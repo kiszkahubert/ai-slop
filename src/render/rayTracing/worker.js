@@ -20,7 +20,7 @@ export function buildRegion(field, origin, meshes, apertures = []) {
   const f=adapter(field),half=512,box={x0:origin[0]-half,x1:origin[0]+half,z0:origin[1]-half,z1:origin[1]+half};
   const holes={nearby(b,pad=0){return apertures.filter(cv=>overlaps(cv.box,b,pad));},cutTriangle:CrevasseField.prototype.cutTriangle};
   const p=[],colors=[],uv=[];
-  const emit=(point,color,coord)=>{p.push(point[0]-origin[0],point[1],point[2]-origin[1]);colors.push(...color);uv.push(...coord);};
+  const emit=(point,color,coord,fade=0,groundNormal=0)=>{p.push(point[0]-origin[0],point[1],point[2]-origin[1]);colors.push(...color);uv.push(...coord,fade,groundNormal);};
   const i0=Math.max(0,Math.floor((box.x0-f.x0)/f.cell)),i1=Math.min(f.nx-1,Math.ceil((box.x1-f.x0)/f.cell));
   const j0=Math.max(0,Math.floor((box.z0-f.z0)/f.cell)),j1=Math.min(f.nz-1,Math.ceil((box.z1-f.z0)/f.cell));
   const point=(i,j)=>[f.x0+i*f.cell,f.heightAt(i,j),f.z0+j*f.cell];
@@ -36,14 +36,18 @@ export function buildRegion(field, origin, meshes, apertures = []) {
       const i=index?index[k]:k;v.fromArray(pos,i*3).applyMatrix4(matrix);
       const color=m.color.slice();
       if(m.vertexColor)for(let c=0;c<3;c++)color[c]*=m.vertexColor[i*3+c];
-      emit(v.toArray(),color,m.uv?Array.from(m.uv.subarray(i*2,i*2+2)):[0,0]);
+      // Negative layers below -1 distinguish ice ground data from terrain (-1).
+      // Reuse spare colour/UV channels; extra samplers would exceed the local shader's GPU budget.
+      if(m.iceGround)for(let c=0;c<3;c++)color[c]=m.iceGround[i*4+c];
+      if(m.iceGround)color[3]=-m.color[3]-1;
+      emit(v.toArray(),color,m.uv?Array.from(m.uv.subarray(i*2,i*2+2)):[0,0],m.iceGround?.[i*4+3]||0,m.iceGroundNormal||0);
     }
     if(p.length/9>3000000)throw new Error('Nearby geometry exceeds the 3,000,000 triangle budget');
   }
   let geometry=new THREE.BufferGeometry();
   geometry.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
   geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,4));
-  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,4));
   // The terrain and model seams share vertices. Welding all attributes retains material
   // boundaries and UV seams while avoiding three copies of every terrain vertex on the GPU.
   const welded=mergeVertices(geometry,1e-4);geometry.dispose();geometry=welded;
