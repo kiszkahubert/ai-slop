@@ -10,7 +10,7 @@ import { startFlyby, stopFlyby, skipStop, replayFlyby } from '../sim/flyby.js';
 import { resetHUD } from './hud.js';
 import { isEmptyBottle } from '../sim/physiology.js';
 import { renderDebrief } from './debrief.js';
-import { QUALITY_PRESETS, currentQuality } from '../render/quality.js';
+import { QUALITY_PRESETS, currentQuality, veryLowFullResolution } from '../render/quality.js';
 import { FRAME_CAPS, initialFrameCap } from '../render/framePacing.js';
 import { CLIMBS, reachedSummits } from '../world/route.js';
 
@@ -39,7 +39,12 @@ function renderQualityButtons() {
   for (const box of document.querySelectorAll('[data-quality-buttons]')) {
     box.innerHTML = Object.entries(QUALITY_PRESETS).map(([id, q]) => `<button data-quality="${id}" class="${id === currentQuality() ? 'active' : ''}">${q.label}</button>`).join('');
   }
+  for (const box of document.querySelectorAll('[data-very-low-resolution]')) {
+    box.classList.toggle('hidden', currentQuality() !== 'verylow');
+    box.querySelector('input').checked = veryLowFullResolution();
+  }
 }
+on('veryLowFullResolutionChanged', renderQualityButtons);
 
 /** Frame-rate limit buttons (30 / 60 / 120 / Max) next to the quality buttons. */
 let frameCap = initialFrameCap();
@@ -54,7 +59,12 @@ export function initScreens(glCanvas) {
   renderQualityButtons();
   renderFpsButtons();
   renderRayTracing();
-  document.addEventListener('change', e => { if (e.target.matches('[data-rt-toggle]')) emit('setRayTracing', e.target.checked); });
+  document.addEventListener('change', e => {
+    if (e.target.matches('[data-rt-toggle]')) emit('setRayTracing', e.target.checked);
+    if (e.target.matches('[data-very-low-full-resolution]')) {
+      emit('setVeryLowFullResolution', e.target.checked);
+    }
+  });
   document.addEventListener('click', (e) => {
     const rs = e.target.closest('[data-rt-strength]');
     if (rs) { emit('setRayTracingStrength', rs.dataset.rtStrength); return; }

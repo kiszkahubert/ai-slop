@@ -28,6 +28,25 @@ export const QUALITY_PRESETS = {
 };
 
 const KEY = 'everestSim.quality';
+const FULL_RESOLUTION_KEY = 'everestSim.veryLowFullResolution';
+
+export function initialVeryLowFullResolution() {
+  try { return localStorage.getItem(FULL_RESOLUTION_KEY) === 'true'; } catch { return false; }
+}
+
+let fullResolution = initialVeryLowFullResolution();
+export const veryLowFullResolution = () => fullResolution;
+export function rememberVeryLowFullResolution(value) {
+  fullResolution = !!value;
+  try { localStorage.setItem(FULL_RESOLUTION_KEY, String(fullResolution)); } catch { /* storage blocked */ }
+}
+
+/** Full resolution keeps every Very Low optimization except resolution reduction. */
+export function qualitySettings(name, nativeResolution = veryLowFullResolution()) {
+  const q = QUALITY_PRESETS[name];
+  if (name !== 'verylow' || !nativeResolution) return q;
+  return { ...q, pixelRatio: Infinity, maxWidth: Infinity, maxHeight: Infinity, adaptiveResolution: false };
+}
 
 export function initialQuality() {
   const q = new URLSearchParams(location.search).get('quality');

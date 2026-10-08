@@ -3,6 +3,11 @@
 Select **Very Low** on the title or pause screen, or launch with `?quality=verylow`.
 The browser remembers the choice. It applies without a reload.
 
+Enable **Use full display resolution** beneath the graphics buttons on the title or pause screen to keep native
+display resolution, including the display's device pixel ratio. This disables the 960 × 540 cap, initial half
+resolution and adaptive downscaling while retaining the other Very Low optimizations. The preference is remembered
+separately and survives switching presets. Uncheck it to restore reduced/adaptive resolution (the default).
+
 The preset targets the fragment-shading, bandwidth and draw-submission costs that remain in Low:
 
 - Terrain uses a separate `MeshLambertMaterial`: altitude, slope, glacier and exposed-rock masks determine

@@ -1,1 +1,11 @@
-[{"script":"tests/very-low.js","expect":"r.ok"},{"wait":1000},{"shot":"very-low-gameplay.png"}]
+[
+  {"script":"tests/very-low.js","expect":"r.ok"},
+  {"wait":1000},
+  {"shot":"very-low-gameplay.png"},
+  {"eval":"__sim.setVeryLowFullResolution(true); document.querySelector('#btnQuit').click();"},
+  {"wait":1000},
+  {"shot":"very-low-full-resolution.png"},
+  {"eval":"setTimeout(() => location.reload(),100);"},
+  {"wait":1000},
+  {"script":"tests/very-low-persistence.js","expect":"r.ok"}
+]
