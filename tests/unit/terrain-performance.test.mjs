@@ -71,3 +71,133 @@ test('time-sliced updates keep the current mesh until a finer one is complete, a
     assert.deepEqual(a.attributes.position.array, b.attributes.position.array);
   }
 });
+
+// Charge field reads to a deterministic clock so scheduler tests also model a slower CPU.
+function schedulerFixture(t, { nx = 129, nz = 129, height = (i, j) => i === 5 && j === 7 ? 30 : 0 } = {}) {
+  let clock = 0, reads = 0;
+  t.mock.method(performance, 'now', () => clock);
+  const f = new CoreField({ x0: 0, z0: 0, cell: 4, nx, nz },
+    Float32Array.from({ length: nx * nz }, (_, k) => height(k % nx, Math.floor(k / nx))));
+  f.glacier = new Uint8Array(f.h.length); f.rock = new Uint8Array(f.h.length);
+  const terrain = new TerrainLOD(new THREE.Scene(), new THREE.MeshBasicMaterial(), f,
+    { chunkCells: 128, levels: [1, 2, 4], distances: [350, 900], glacier: false, shadows: false });
+  const camera = new THREE.PerspectiveCamera(100, 1, .3, 40000);
+  camera.position.set(1000, 50, 200); camera.lookAt(256, 0, 200);
+  const read = f.heightAt.bind(f);
+  f.heightAt = (i, j) => { clock += .01; reads++; return read(i, j); };
+  return { f, terrain, camera, view: { camera, height: 720, pixelError: 2 }, now: () => clock, reads: () => reads };
+}
+
+test('screen-space errors pause within the update budget and resume without rereading vertices', t => {
+  const { f, terrain, camera, view, now, reads } = schedulerFixture(t), ch = terrain.chunks[0];
+  const expected = referenceError({ heightAt: (i, j) => f.h[j * f.nx + i] }, ch, 2);
+  const before = now();
+  assert.ok(terrain.update(camera.position, 0, view, 4) > 0, 'an unresolved LOD decision still counts as pending work');
+  assert.ok(now() - before <= 5.3, 'only the final 64-vertex batch may overrun the cooperative deadline');
+  assert.equal(ch.errors[1], undefined, 'an expensive measurement is not drained in one frame');
+  const iterator = ch.errorJobs[1];
+  assert.ok(iterator);
+  let frames = 1;
+  while (ch.errors[1] === undefined && frames++ < 200) {
+    const start = now();
+    terrain.update(camera.position, 0, view, 4);
+    assert.ok(now() - start <= 5.3);
+    if (ch.errors[1] === undefined) assert.equal(ch.errorJobs[1], iterator, 'resume the same measurement');
+    assert.equal(ch.meshes[ch.level].visible, true);
+  }
+  assert.ok(frames > 1 && frames < 200);
+  assert.equal(ch.errors[1], expected);
+  assert.equal(reads(), 129 * 129 + 4 * 64 * 64, 'each native vertex and each coarse cell corner is read once');
+});
+
+test('finishing an error measurement and starting geometry share one frame deadline', t => {
+  const { terrain, camera, view, now } = schedulerFixture(t), ch = terrain.chunks[0];
+  let frames = 0, finalElapsed;
+  while (ch.errors[1] === undefined && frames++ < 200) {
+    const start = now();
+    terrain.update(camera.position, 3, view, 4);
+    finalElapsed = now() - start;
+    assert.ok(finalElapsed <= 5.3, 'geometry must use the remaining error-measurement budget');
+  }
+  assert.equal(ch.errors[1], 30);
+  assert.ok(finalElapsed > 0);
+  assert.ok(terrain.building, 'geometry started with the remaining budget');
+  assert.equal(ch.level, 2, 'the old complete mesh remains visible while refinement is unfinished');
+  for (let k = 0; terrain.update(camera.position, 3, view, 4) > 0 && k < 200; k++);
+  assert.equal(ch.level, 0);
+});
+
+test('a deferred LOD decision preserves a partial mesh, which resumes when its target is known', t => {
+  const { terrain, camera, view, now } = schedulerFixture(t,
+    { nx: 257, height: (i, j) => i <= 128 ? 1000 : i === 133 && j === 7 ? 20 : 0 });
+  camera.position.set(0, 50, 200); camera.lookAt(512, 500, 200);
+  const ch = terrain.chunks[1], create = t.mock.method(terrain, 'geometryJob');
+  const iterator = terrain.geometryJob(ch, 1), cancel = t.mock.method(iterator, 'return');
+  iterator.next();
+  const pending = { ch, lv: 0, iterator };
+  terrain.building = pending;
+  const before = now();
+  terrain.update(camera.position, 3, view, 4);
+  assert.ok(terrain.building === pending, 'the original partial mesh remains pending');
+  assert.ok(now() - before <= 5.3);
+  assert.equal(cancel.mock.callCount(), 0, 'running out of measurement time does not invalidate the mesh');
+  assert.equal(ch.level, 2);
+  assert.equal(terrain.desiredLevel(ch, camera.position, view), 0, 'the pending refinement is still required');
+  for (let k = 0; terrain.update(camera.position, 3, view, 4) > 0 && k < 400; k++);
+  assert.equal(ch.level, 0);
+  assert.equal(cancel.mock.callCount(), 0);
+  assert.equal(create.mock.calls.filter(call => call.arguments[0] === ch && call.arguments[1] === 1).length, 1,
+    'the native mesh finishes from its original iterator');
+});
+
+test('a resolved obsolete target cancels a partial mesh even when no build time remains', t => {
+  const { terrain, now } = schedulerFixture(t), ch = terrain.chunks[0];
+  const iterator = terrain.geometryJob(ch, 1), cancel = t.mock.method(iterator, 'return');
+  iterator.next(); terrain.building = { ch, lv: 0, iterator };
+  const before = now();
+  terrain.update(new THREE.Vector3(10000, 10000, 10000), 3, null, 0);
+  assert.equal(now(), before);
+  assert.equal(cancel.mock.callCount(), 1);
+  assert.equal(terrain.building, null);
+  assert.equal(ch.level, 2);
+});
+
+test('flyby error measurements remain resumable when prediction ends and the current view takes over', t => {
+  const { terrain, camera, view, now } = schedulerFixture(t), ch = terrain.chunks[0];
+  terrain.prepare(camera, view, { timeMs: 4 });
+  assert.equal(terrain.preparing.kind, 'error');
+  const iterator = terrain.preparing.iterator;
+  const handoff = now();
+  terrain.update(camera.position, 3, view, 4);
+  assert.ok(now() - handoff <= 5.3, 'the current view does not drain an active prefetch measurement');
+  assert.equal(terrain.preparing, null);
+  assert.equal(ch.errorJobs[1], iterator);
+  terrain.prepare(camera, view, { timeMs: 4 });
+  assert.equal(terrain.preparing.iterator, iterator);
+  terrain.cancelPrepare();
+  assert.equal(terrain.preparing, null);
+  const start = now();
+  terrain.update(camera.position, 3, view, 4);
+  assert.ok(now() - start <= 5.3, 'prefetched errors are resumed, not drained');
+  assert.equal(ch.errorJobs[1], iterator);
+  assert.equal(ch.errors[1], undefined);
+  for (let k = 0; terrain.update(camera.position, 3, view, 4) > 0 && k < 400; k++);
+  assert.equal(ch.errors[1], 30);
+  assert.equal(ch.level, 0);
+});
+
+test('the current view resumes a partly prepared flyby mesh instead of starting another build', t => {
+  const { terrain, camera, view, now } = schedulerFixture(t, { height: () => 0 }), ch = terrain.chunks[0];
+  ch.errors[1] = 0;
+  const create = t.mock.method(terrain, 'geometryJob');
+  terrain.prepare(camera, view, { timeMs: 4 });
+  assert.equal(terrain.preparing.kind, 'geometry');
+  const iterator = terrain.preparing.iterator, before = now();
+  terrain.update(camera.position, 3, view, 4);
+  assert.ok(now() - before <= 5.3);
+  assert.equal(terrain.building.iterator, iterator);
+  assert.equal(terrain.preparing, null);
+  for (let k = 0; terrain.update(camera.position, 3, view, 4) > 0 && k < 200; k++);
+  assert.equal(ch.level, 1);
+  assert.equal(create.mock.callCount(), 1);
+});
