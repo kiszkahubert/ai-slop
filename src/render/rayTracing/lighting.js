@@ -51,8 +51,9 @@ export class RayTracingLighting {
   }
   notify() {
     this.stats.requested=this.requested;
-    this.stats.active=this.requested&&this.quality!=='low'&&this.ready&&!this.failed;
-    this.stats.status=!this.requested?'Off':this.failed?'Unavailable: '+this.failed:this.quality==='low'?'Paused on Low':this.ready?'On — lighting converges while you explore':'Preparing lighting…';
+    const paused = this.quality === 'low' || this.quality === 'verylow';
+    this.stats.active=this.requested&&!paused&&this.ready&&!this.failed;
+    this.stats.status=!this.requested?'Off':this.failed?'Unavailable: '+this.failed:paused?`Paused on ${this.quality === 'verylow' ? 'Very Low' : 'Low'}`:this.ready?'On — lighting converges while you explore':'Preparing lighting…';
     emit('rayTracingStatus',{...this.stats});
   }
   /** 'subtle' | 'normal' | 'strong': how pronounced traced occlusion and bounce light are. */
@@ -67,6 +68,8 @@ export class RayTracingLighting {
     RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;this.notify();return this.requested;
   }
   configure(name) {this.quality=name;this.historyValid=false;this.rebuildProxies=true;this.resetCaches();
+    RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;
+    if(name === 'verylow') { this.releaseResources(); this.dynamicTarget.dispose(); this.notify(); return; }
     this.catalog.invalidateTextures();
     if(this.snapshot)this.localQuad.material.uniforms.uPropAlbedo.value=this.catalog.makeTextureArray();this.notify();}
   fail(message) {
@@ -260,7 +263,7 @@ export class RayTracingLighting {
   prepare(time) {
     RT_SHARED.uRtEnabled.value=0;RT_SHARED.uRtLocalReady.value=0;
     if(this.pendingFailure){const failure=this.pendingFailure;this.pendingFailure=null;this.fail(failure);}
-    if(!this.requested||this.quality==='low'||this.failed)return;
+    if(!this.requested||this.quality==='low'||this.quality==='verylow'||this.failed)return;
     const r=this.renderer,oldTarget=r.getRenderTarget(),oldColor=r.getClearColor(new THREE.Color()),oldAlpha=r.getClearAlpha(),auto=r.autoClear,shadows=r.shadowMap.autoUpdate;
     const viewport=r.getViewport(new THREE.Vector4()),scissor=r.getScissor(new THREE.Vector4()),scissorTest=r.getScissorTest();
     try {

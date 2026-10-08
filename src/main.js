@@ -11,7 +11,9 @@ import { buildProps } from './world/props.js';
 import { planBaseCamp } from './world/baseCamp.js';
 import { Environment } from './world/environment.js';
 import { createClimber } from './render/climber.js';
-import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality } from './render/quality.js';
+import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality, renderPixelRatio } from './render/quality.js';
+import { createSimpleTerrainMaterial, LowGraphics } from './render/lowGraphics.js';
+import { LowResolution } from './render/lowResolution.js';
 import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/proceduralTextures.js';
 import { loadTerrainRock } from './render/terrainAssets.js';
 import { createReliefTexture, MacroShadow } from './render/terrainMaps.js';
@@ -48,23 +50,30 @@ const step = (t) => new Promise((r) => { loadMsg.textContent = t; setTimeout(r, 
 let qualityName = initialQuality(), quality = QUALITY_PRESETS[qualityName];
 setCurrentQuality(qualityName);
 installAtmosphericFog();
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio));
+// Context MSAA cannot be toggled live. Medium/High use their multisampled scene target;
+// the two direct-render presets avoid hidden default-framebuffer MSAA costs.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+const resolution = new LowResolution();
+renderer.setPixelRatio(renderPixelRatio(quality, innerWidth, innerHeight, devicePixelRatio));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = quality.shadows !== false;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 150000);
 camera.rotation.order = 'YXZ';
 const resize = () => {
+  renderer.setPixelRatio(renderPixelRatio(quality, innerWidth, innerHeight, devicePixelRatio, resolution.scale));
   renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   if (postfx) { const s = renderer.getDrawingBufferSize(new THREE.Vector2()); postfx.setSize(s.x, s.y); }
 };
 addEventListener('resize', resize);
 
 let env, terrain, backdrop, landscape, climber, rig, avalancheView, postfx, terrainMat, relief, layerSize, reliefKey, rayTracing, rock;
+const simpleTerrainMat = createSimpleTerrainMaterial();
+let lowGraphics;
+const terrainView = () => ({ camera, height: renderer.domElement.height, pixelError: quality.terrainError, distanceScale: quality.lodDistanceScale || 1 });
 
 async function boot() {
   await step('Loading the Pléiades elevation model…');
@@ -106,6 +115,10 @@ async function boot() {
   climber = createClimber(scene, { renderer });
   climber.group.userData.rtDynamic = true;
   patchSceneMaterials(scene);                 // mountain shadows on props and the climber too
+  lowGraphics = new LowGraphics(scene, game.world);
+  lowGraphics.apply(!!quality.simpleScenery);
+  terrain.setMaterial(quality.simpleTerrain ? simpleTerrainMat : terrainMat);
+  backdrop.setMaterial(quality.simpleTerrain ? simpleTerrainMat : terrainMat);
   postfx = setupPostProcessing(renderer, scene, camera, quality);
   rayTracing = new RayTracingLighting(renderer, scene, camera, { field: landscape, back, world: game.world, terrainMaterial: terrainMat, sun: env.sun, quality: qualityName });
   // A shader/driver failure must leave ordinary rendering available.
@@ -128,8 +141,10 @@ async function boot() {
   rig.update(0, 0, game, climber);
   game.world.campVisuals.update(camera);
   game.world.crevasseVisuals.update(camera);
-  for (let k = 0; k < 60 && terrain.update(camera.position, 40) > 0; k++);
-  backdrop.update(camera.position, 40);
+  // Coarse meshes already cover the view. Avoid eagerly measuring/building every visible native chunk
+  // before the first frame, especially on a slow CPU; normal frame budgets finish the refinement.
+  for (let k = 0; k < 8 && terrain.update(camera.position, 40, terrainView(), 4) > 0; k++);
+  backdrop.update(camera.position, 40, terrainView(), 2);
   showTitle();
   requestAnimationFrame(frame);
 }
@@ -143,7 +158,9 @@ function frame(now) {
   const menu = MENUS.has(game.mode);
   if (!pacer.due(now, menu)) return;          // frame-rate limit: skip this display refresh entirely
   rayTracing.paceMs = pacer.idleMs(menu);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now; simTime += dt;
+  const interval = now - last;
+  if (quality.adaptiveResolution && resolution.sample(interval)) resize();
+  const dt = Math.min(0.05, interval / 1000); last = now; simTime += dt;
   if (game.mode === 'play') {
     if (game.flyby) {
       updateFlyby(dt);                      // cinematic flight: the camera flies, the climber waits
@@ -168,7 +185,7 @@ function frame(now) {
     labels: currentLabels(),
   });
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
-  const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
+  const lodView = terrainView();
   // Meshes are built in time slices (a few ms per frame) so a detailed or crevasse-cut chunk never stalls a frame
   terrain.update(camera.position, 3, lodView, 4);
   backdrop.update(camera.position, 2, lodView, 2);
@@ -235,12 +252,14 @@ function debugKey(code) {
   }
   if (code === 'KeyK') { game.time += 1; stepPhysiology(game, 1, { moving: false, sprint: false, grade: 0 }); }
 }
-// ---------------- graphics quality (Low / Medium / High): applied live, nothing in the simulation changes
+// ---------------- graphics quality: applied live, nothing in the simulation changes
 function setQuality(name) {
   const q = QUALITY_PRESETS[name];
   if (!q || !terrainMat) return false;
+  lowGraphics.apply(false); // restore shared source materials before changing their texture sets
   qualityName = name; quality = q; rememberQuality(name); setCurrentQuality(name);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+  resolution.reset();
+  renderer.shadowMap.enabled = q.shadows !== false;
   resize();
   env.applyQuality(q);
   postfx.configure(q);
@@ -255,6 +274,9 @@ function setQuality(name) {
     opts.relief = relief.texture; opts.reliefRect = relief.rect;
   }
   updateTerrainMaterial(terrainMat, opts);
+  terrain.setMaterial(q.simpleTerrain ? simpleTerrainMat : terrainMat);
+  backdrop.setMaterial(q.simpleTerrain ? simpleTerrainMat : terrainMat);
+  lowGraphics.apply(!!q.simpleScenery);
   rayTracing?.configure(name);
   return true;
 }
@@ -274,6 +296,7 @@ const api = {
   crevasseAt: (x,z) => game.world.crevasseField.at(x,z)?.id ?? null,
   querySupport: (position,maxDrop) => querySupport(game,position,maxDrop),
   get rig() { return rig; }, get terrain() { return terrain; }, get backdropTerrain() { return backdrop; }, renderMs: 0, frameMs: 0,
+  resolution,
   startFlyby, skipStop, stopFlyby: (reason) => stopFlyby(reason), updateFlyby, replayFlyby, flybyPreview,
 };
 window.__sim = api;

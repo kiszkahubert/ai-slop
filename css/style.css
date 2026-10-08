@@ -157,7 +157,7 @@ body[data-screen="scrPause"] #toasts { display: none; }
 
 /* graphics quality switch (title and pause screens) */
 .quality { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; color: var(--dim, #9fb0c4); }
-.quality .qbtns { display: inline-flex; gap: 6px; }
+.quality .qbtns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .quality button { padding: 4px 12px; font-size: 13px; }
 .quality button.active { border-color: var(--good, #7fd8a8); color: #fff; }
 

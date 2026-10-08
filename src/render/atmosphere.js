@@ -166,7 +166,10 @@ export class WindSnow {
     this.scene = scene; this.build(count);
   }
   build(count) {
-    if (this.points) { this.scene.remove(this.points, this.lines); this.points.geometry.dispose(); this.lines.geometry.dispose(); }
+    if (this.points) {
+      this.scene.remove(this.points, this.lines); this.points.geometry.dispose(); this.lines.geometry.dispose();
+      this.points.material.map.dispose(); this.points.material.dispose(); this.lines.material.dispose();
+    }
     const N = this.N = count, r = mulberry32(3), pos = this.pos = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) pos.set([(r() - 0.5) * 70, (r() - 0.5) * 40, (r() - 0.5) * 70], i * 3);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -186,6 +189,7 @@ export class WindSnow {
   }
   /** amount 0..1 (snowfall + spindrift), wind in km/h as shown on the HUD, windDir: degrees it blows from */
   update(dt, cam, amount, wind, windDirDeg, day) {
+    if (!this.N) { this.points.visible = this.lines.visible = false; return; }
     const p = this.pos, mat = this.points.material;
     mat.opacity = amount * 0.85; mat.color.setScalar(lerp(0.35, 1, day));
     const streak = smoothstep(30, 90, wind);

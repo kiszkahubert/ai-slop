@@ -83,12 +83,21 @@ export class TerrainDepthPrepass {
   }
 
   setSize(w, h) {
-    if (!this.supported || (w === this.w && h === this.h)) return;
+    if (!this.enabled || (w === this.w && h === this.h)) return;
     this.w = w; this.h = h;
     this.depthRT?.dispose(); this.cullRT?.dispose();
     const opts = { type: THREE.FloatType, format: THREE.RedFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false };
     this.depthRT = new THREE.WebGLRenderTarget(w, h, { ...opts, depthBuffer: true });
     this.cullRT = new THREE.WebGLRenderTarget(w, h, { ...opts, depthBuffer: false });
+  }
+
+  setEnabled(enabled) {
+    this.enabled = this.supported && enabled;
+    if (!this.enabled) {
+      this.depthRT?.dispose(); this.cullRT?.dispose();
+      this.depthRT = this.cullRT = null; this.w = this.h = 0;
+      ZCULL.uZCull.value = null; ZCULL.uZCullOn.value = 0;
+    }
   }
 
   /** Draws the terrain depth for this view; afterwards the terrain shader culls hidden fragments (ZCULL.uZCullOn). */

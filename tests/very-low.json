@@ -1,0 +1,1 @@
+[{"script":"tests/very-low.js","expect":"r.ok"},{"wait":1000},{"shot":"very-low-gameplay.png"}]

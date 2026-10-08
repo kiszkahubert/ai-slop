@@ -18,7 +18,7 @@ const SURFACES = {
 };
 const up = new THREE.Vector3(0, 1, 0), white = new THREE.Color(0xffffff);
 
-export function campDetailRadius(q) { return q.textureSize >= 1024 ? 120 : q.textureSize >= 512 ? 80 : 40; }
+export function campDetailRadius(q) { return q.campDetailRadius ?? (q.textureSize >= 1024 ? 120 : q.textureSize >= 512 ? 80 : 40); }
 export function campDetailLevel(distance, previous, radius) {
   return distance < radius * (previous === 1 ? 1.1 : 0.9) ? 1 : 0;
 }
@@ -142,7 +142,7 @@ export class CampVisuals {
     for (const r of this.records) {
       if (r.warmUntil <= now) r.warmUntil = 0;
       const distance = Math.hypot(r.x - camera.position.x, r.y - camera.position.y, r.z - camera.position.z);
-      const level = Math.max(campDetailLevel(distance, r.level, this.radius), r.warmUntil > now ? 1 : 0);
+      const level = this.radius === 0 ? 0 : Math.max(campDetailLevel(distance, r.level, this.radius), r.warmUntil > now ? 1 : 0);
       if (force || this.dirty || r.level !== level) { r.level = level; changed.add(r.bucket); cells.add(r.cell); }
     }
     for (const cell of cells) {
@@ -167,6 +167,7 @@ export class CampVisuals {
   applyQuality(q) {
     if (this.disposed) return;
     this.radius = campDetailRadius(q); this.dirty = true;
+    if (this.radius === 0) for (const record of this.records) record.warmUntil = 0;
     if (this.size === q.textureSize) return;
     const old = this.textures; this.textures = createCampTextures(q.textureSize, this.anisotropy); this.size = q.textureSize;
     for (const [name, material] of Object.entries(this.materials)) {

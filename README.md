@@ -50,7 +50,7 @@ Nuptse progress and high-camp stock while preserving the existing expedition.
 
 **Ray-traced lighting** is an optional switch on the title and pause screens. It adds soft sun shadows,
 terrain skylight and one diffuse bounce while keeping the normal Three.js renderer. It is off by default;
-the choice is remembered separately from graphics quality. Medium and High support it; Low pauses it.
+the choice is remembered separately from graphics quality. Medium and High support it; Low and Very Low pause it. Very Low also releases any allocated traced-lighting caches.
 Lighting converges over time, including on distant mountains. The first nearby geometry snapshot takes
 several seconds at Base Camp. `?rt=on` and `?rt=off` override the saved preference. Beside the switch,
 **Subtle / Normal / Strong** sets how pronounced the traced occlusion and bounce light are (`?rtStrength=`).
@@ -227,18 +227,30 @@ Everest, Lhotse and Nuptse). The peak list is in `src/world/geo.js`.
 
 ## Graphics
 
-Choose **Low**, **Medium** or **High** under *Graphics* on the title or pause screen (or add `?quality=low|medium|high` to
+Choose **Very Low**, **Low**, **Medium** or **High** under *Graphics* on the title or pause screen (or add `?quality=verylow|low|medium|high` to
 the URL). The choice applies immediately, is remembered by the browser, and never touches the simulation: the HUD,
 oxygen, route map, compass, camera and controls behave exactly the same at every setting.
 
-| | Low | Medium | High |
-|---|---|---|---|
-| Terrain textures | 256 px | 512 px, anti-tiling, micro detail | 1024 px, exact gradients (hardware anisotropic filtering) |
-| Relief normals / terrain AO | 32 m / 64 m | 16 m / 32 m | 8 m / 16 m |
-| Mountain shadows | off | on | on |
-| Sun shadow map | 1024², ±40 m | 2048², ±55 m | 4096², ±70 m |
-| Post-processing | none (direct ACES) | bloom, vignette, MSAA | + SSAO, + depth of field in free viewing |
-| Mist layers, snow particles | off, 1,500 | on, 3,500 | on, 6,000 |
+**Very Low** is intended for thin clients and older integrated GPUs. It uses a separate vertex-lit terrain shader,
+untextured diffuse scenery and simple camp models. Sun/moon lighting, the nighttime headlamp, terrain/crevasse
+geometry, route markers and all gameplay remain available. The sky becomes a solid atmospheric colour.
+The 3D view starts at half the viewport resolution, capped at **960 × 540**, and can fall to half of that again
+when sustained frame times exceed 45 ms. The HUD and menus stay at the full display resolution. Choose **30**
+under *Frame rate* to limit power use once performance is adequate. This cap does not make an overloaded GPU faster.
+
+| | Very Low | Low | Medium | High |
+|---|---|---|---|---|
+| Terrain/scenery shading | vertex-lit / diffuse | PBR | PBR | PBR |
+| Terrain textures | none in display shader | 256 px | 512 px, anti-tiling, micro detail | 1024 px, exact gradients |
+| Relief normals / terrain AO | mesh normals | 32 m / 64 m | 16 m / 32 m | 8 m / 16 m |
+| Mountain shadows | off | off | on | on |
+| Sun shadow map | off | 1024², ±40 m | 2048², ±55 m | 4096², ±70 m |
+| Post-processing | none | none (direct ACES) | bloom, vignette, MSAA | + SSAO, + depth of field in free viewing |
+| Terrain depth prepass | off | on | on | on |
+| Mist layers, snow particles | off, 0 | off, 1,500 | on, 3,500 | on, 6,000 |
+
+See [Very Low implementation and benchmarking](docs/very-low.md). Run `npm run benchmark:verylow` on the target
+machine to compare GPU-completed render times and draw counts at Base Camp, Camp 3 and the Everest summit.
 
 What the renderer does:
 - **Terrain**: photographed CC0 cliff rock plus procedural snow, ice/firn and moraine gravel,
@@ -368,7 +380,7 @@ src/
     helmet.js         helmet shell, vents, chin strap and the logo decals
     iceAxe.js         ice axe: curved shaft, toothed pick, adze, spike, grip, leash
     camera.js         third / first person camera rig
-    quality.js        Low / Medium / High presets
+    quality.js        Very Low / Low / Medium / High presets
     framePacing.js    frame-rate limit (30 / 60 / 120 / Max; 30 behind menus)
     depthPrepass.js   terrain depth prepass: hidden terrain skips its shading
     proceduralTextures.js  generated terrain layers (albedo, normal, roughness, AO), jacket quilting, logo stand-in
@@ -426,7 +438,8 @@ active assets, so use it only when deliberately restoring the legacy terrain.
 
 ```bash
 npm run lint                   # ESLint (eslint.config.js)
-npm run test:unit              # node:test: falls, flow, burial, physiology, routes, spatial index, saves
+npm run test:unit              # node:test: graphics, falls, flow, physiology, routes, spatial index, saves
+npm run test:verylow           # live Very Low switches, restored render state, unchanged support/placements
 npm run test:terrain           # Python regressions: GeoTIFF alignment, NoData, geoid conversion, asset metadata
 npm run verify:terrain         # with source files in dem/: verify encoded heights and complete route coverage
 npm run test:e2e               # Playwright: graphics / GPU overflow, physics, hazards, UI, skis, all three expeditions
