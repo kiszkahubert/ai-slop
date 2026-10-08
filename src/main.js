@@ -169,8 +169,9 @@ function frame(now) {
   });
   climber.setDaylight(smoothstep(-0.1, 0.12, game.env.sunEl));
   const lodView={camera,height:renderer.domElement.height,pixelError:quality.terrainError};
-  terrain.update(camera.position, 3, lodView);
-  backdrop.update(camera.position, 2, lodView);
+  // Meshes are built in time slices (a few ms per frame) so a detailed or crevasse-cut chunk never stalls a frame
+  terrain.update(camera.position, 3, lodView, 4);
+  backdrop.update(camera.position, 2, lodView, 2);
   prepareFlyby(now, lodView);
   if ((game.mode === 'play' || game.mode === 'camp' || game.mode === 'paused') && !game.flyby) updateHUD(dt);
   updateAudio(dt);

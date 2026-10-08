@@ -273,6 +273,11 @@ work that never reaches the screen, with pixel-identical output:
   and lighting work (35–65% of terrain fragments);
 - the sky is drawn after the terrain, so the depth test skips its scattering shader wherever terrain covers it;
 - stars, snowflakes, spindrift streaks and mist that are fully transparent are not drawn.
+- distant terrain chunks (a few dozen triangles each, beyond ~3.6 km) are drawn merged in 2 km groups: one draw call
+  instead of up to 16, which roughly halves the frame's draw calls;
+- terrain meshes are built in time slices of a few milliseconds per frame, and a chunk keeps its current mesh until the
+  finer one is complete, so the crevasse-cut chunks around the Icefall (up to ~150 ms each) no longer stall a frame.
+  Level-of-detail errors are measured within the same per-frame budget, so a teleport does not freeze the game.
 
 See [the issue 13 implementation and comparison notes](docs/visual-fidelity.md) for shader corrections,
 asset attribution, shared geometry, validation and remaining hardware/volumetric-cloud work.

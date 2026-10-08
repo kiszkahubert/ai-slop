@@ -30,18 +30,25 @@ export function measureLodError(field, chunk, step) {
 function drain(job) { let result; do {result=job.next();} while(!result.done); return result.value; }
 function* lodErrorJob(field, chunk, step) {
   if(step===1)return 0;
-  let error=0, zj=0;
+  let error=0;
   const [xs,zs]=meshAxes(field,chunk,step);
-  for(let j=chunk.j0;j<=chunk.j1;j++)for(let i=chunk.i0;i<=chunk.i1;i++){
-    while(zj<zs.length-2 && j>=zs[zj+1])zj++;
-    let xi=Math.min(Math.floor((i-chunk.i0)/step),xs.length-2);
-    while(xi>0 && i<xs[xi])xi--;
-    while(xi<xs.length-2 && i>=xs[xi+1])xi++;
-    const a=xs[xi],b=zs[zj],ix=xs[xi+1],jz=zs[zj+1],u=(i-a)/(ix-a),v=(j-b)/(jz-b);
-    const h00=field.heightAt(a,b),h10=field.heightAt(ix,b),h01=field.heightAt(a,jz),h11=field.heightAt(ix,jz);
-    const coarse=u+v<=1?h00+(h10-h00)*u+(h01-h00)*v:h11+(h01-h11)*(1-u)+(h10-h11)*(1-v);
-    error=Math.max(error,Math.abs(field.heightAt(i,j)-coarse));
-    if((i-chunk.i0)%64===63)yield;
+  // One coarse cell at a time (its corners read once). A native vertex on a shared coarse edge belongs to the
+  // cell after it, except on the chunk's last row / column.
+  for(let zj=0;zj<zs.length-1;zj++){
+    const b=zs[zj],jz=zs[zj+1],jEnd=zj===zs.length-2?jz:jz-1;
+    for(let xi=0;xi<xs.length-1;xi++){
+      const a=xs[xi],ix=xs[xi+1],iEnd=xi===xs.length-2?ix:ix-1;
+      const h00=field.heightAt(a,b),h10=field.heightAt(ix,b),h01=field.heightAt(a,jz),h11=field.heightAt(ix,jz);
+      for(let j=b;j<=jEnd;j++){
+        const v=(j-b)/(jz-b);
+        for(let i=a;i<=iEnd;i++){
+          const u=(i-a)/(ix-a);
+          const coarse=u+v<=1?h00+(h10-h00)*u+(h01-h00)*v:h11+(h01-h11)*(1-u)+(h10-h11)*(1-v);
+          error=Math.max(error,Math.abs(field.heightAt(i,j)-coarse));
+        }
+      }
+    }
+    yield;
   }
   return error;
 }
@@ -56,6 +63,8 @@ export class TerrainLOD {
     this.chunks = [];
     this.prepared = []; // bounded hidden meshes for a predicted flyby camera
     this.preparing = null;
+    this.building = null; // the time-sliced mesh build in hand (see buildSliced)
+    this.errorDeadline = Infinity; // LOD error measurements stop for this frame after it (time-sliced updates)
     this.frustum = new THREE.Frustum(); this.viewProjection = new THREE.Matrix4();
     const C = opts.chunkCells, ncx = Math.ceil((field.nx - 1) / C), ncz = Math.ceil((field.nz - 1) / C);
     for (let cj = 0; cj < ncz; cj++) for (let ci = 0; ci < ncx; ci++) {
@@ -70,10 +79,18 @@ export class TerrainLOD {
         x0: field.x0 + i0 * field.cell, x1: field.x0 + i1 * field.cell, z0: field.z0 + j0 * field.cell, z1: field.z0 + j1 * field.cell,
       });
     }
+    // Coarse far chunks (a few dozen triangles each) are drawn merged in groups of 4x4: one draw instead of 16
+    this.groups = new Map();
+    if (opts.mergeFrom !== undefined) for (const ch of this.chunks) {
+      const key = Math.floor(ch.i0 / C / 4) + ',' + Math.floor(ch.j0 / C / 4);
+      let g = this.groups.get(key); if (!g) this.groups.set(key, g = { chunks: [], mesh: null, dirty: true });
+      g.chunks.push(ch); ch.group = g;
+    }
     for (const ch of this.chunks) {
       ch.bounds=new THREE.Sphere(new THREE.Vector3((ch.x0+ch.x1)/2,(ch.mn+ch.mx)/2,(ch.z0+ch.z1)/2),Math.hypot(ch.x1-ch.x0,ch.mx-ch.mn,ch.z1-ch.z0)/2+300);
       this.setLevel(ch, ch.join ? 0 : opts.levels.length - 1);
     }
+    this.mergeGroups();
   }
 
   vertexHeight(i, j) {
@@ -149,6 +166,9 @@ export class TerrainLOD {
   }
 
   ensureLevel(ch, lv) {
+    if (!ch.meshes[lv] && this.building?.ch===ch && this.building.lv===lv) {
+      const job=this.building;this.building=null;this.installGeometry(ch,lv,drain(job.iterator));
+    }
     if (!ch.meshes[lv]) {
       const job=this.preparing;
       const geometry=job?.kind==='geometry' && job.ch===ch && job.lv===lv ? drain(job.iterator) : this.buildGeometry(ch,this.o.levels[lv]);
@@ -168,7 +188,24 @@ export class TerrainLOD {
     this.ensureLevel(ch, lv);
     this.prepared = this.prepared.filter(p => p.ch !== ch || p.lv !== lv);
     if (ch.level >= 0 && ch.meshes[ch.level]) ch.meshes[ch.level].visible = false;
-    ch.meshes[lv].visible = true; ch.level = lv;
+    if (ch.group && (this.merged(lv) || this.merged(ch.level))) ch.group.dirty = true;
+    ch.meshes[lv].visible = !this.merged(lv); ch.level = lv;
+  }
+  merged(lv) { return this.o.mergeFrom !== undefined && lv >= this.o.mergeFrom; }
+
+  /** Rebuild the merged mesh of each group whose coarse members changed: the same vertices, concatenated. */
+  mergeGroups() {
+    for (const g of this.groups.values()) {
+      if (!g.dirty) continue;
+      g.dirty = false;
+      const parts = g.chunks.filter(ch => this.merged(ch.level)).map(ch => ch.meshes[ch.level].geometry);
+      if (g.mesh) { this.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh = null; }
+      if (!parts.length) continue;
+      const geometry = mergeGeometries(parts);
+      const m = new THREE.Mesh(geometry, this.mat);
+      m.receiveShadow = !!this.o.shadows; m.matrixAutoUpdate = false; m.layers.enable(TERRAIN_LAYER);
+      this.scene.add(m); g.mesh = m;
+    }
   }
 
   /** Resume altitude-error/geometry jobs within a cooperative deadline, keeping future meshes hidden. */
@@ -204,7 +241,7 @@ export class TerrainLOD {
         if(ch.errors[lv]*this.focalLength/Math.max(4,distance)>view.pixelError)lv--;else break;
       }
       if(this.preparing)continue;
-      if(ch.meshes[lv] || lv>=ch.level)continue;
+      if(ch.meshes[lv] || lv>=ch.level || (this.building?.ch===ch && this.building.lv===lv))continue;
       this.preparing={kind:'geometry',ch,lv,iterator:this.geometryJob(ch,this.o.levels[lv])};
     }
     while (this.prepared.length > maxCached) this.releasePrepared(this.prepared.shift());
@@ -226,22 +263,55 @@ export class TerrainLOD {
     if(view){
       if(this.frustum.intersectsSphere(ch.bounds)){
         const focal=this.focalLength??view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));
+        let deferred=false;
         const pixelError=level=>{
           const job=this.preparing;
           if(ch.errors[level]===undefined && job?.kind==='error' && job.ch===ch && job.lv===level){ch.errors[level]=drain(job.iterator);this.preparing=null;}
-          ch.errors[level] ??= measureLodError(this.f,ch,this.o.levels[level]);
+          if(ch.errors[level]===undefined){
+            if(performance.now()>this.errorDeadline){deferred=true;return 0;}
+            ch.errors[level]=measureLodError(this.f,ch,this.o.levels[level]);
+          }
           return ch.errors[level]*focal/Math.max(4,d);
         };
         while(lv>0 && pixelError(lv)>view.pixelError)lv--;
         // Coarsening needs a margin in both distance and projected error.
         if(ch.level>=0 && lv>ch.level && (d<(D[ch.level]||Infinity)*1.1 || pixelError(lv)>view.pixelError*.75))lv=ch.level;
+        // Out of time this frame for measuring errors: decide next frame, keeping the current mesh meanwhile.
+        if(deferred && ch.level>=0)return ch.level;
       }
     }
     return lv;
   }
 
-  /** returns the number of chunks still waiting for a finer mesh */
-  update(p, budget = 3, view = null) {
+  /**
+   * Advance the mesh build in hand for at most `timeMs`, then start the next ones while time remains. The chunk
+   * keeps its current mesh until the new one is complete, so an expensive mesh (a crevasse collar takes
+   * 50-150 ms) is spread over several frames instead of stalling one. Returns whether a mesh was installed.
+   */
+  buildSliced(todo, budget, timeMs) {
+    const deadline = performance.now() + timeMs, wanted = (job) => todo.some(([lv, ch]) => ch === job.ch && lv === job.lv);
+    const advance = (job) => { let r; do r = job.iterator.next(); while (!r.done && performance.now() < deadline); return r; };
+    if (this.building && !wanted(this.building)) { this.building.iterator.return(); this.building = null; }
+    let installed = 0;
+    for (let k = 0; installed < budget && performance.now() < deadline; ) {
+      if (!this.building) {
+        while (k < todo.length && todo[k][1].meshes[todo[k][0]]) k++;
+        if (k >= todo.length) break;
+        const [lv, ch] = todo[k++];
+        this.building = { ch, lv, iterator: this.geometryJob(ch, this.o.levels[lv]) };
+      }
+      const job = this.building, r = advance(job);
+      if (!r.done) break;
+      this.building = null; this.installGeometry(job.ch, job.lv, r.value); this.setLevel(job.ch, job.lv); installed++;
+    }
+    return installed;
+  }
+
+  /**
+   * Returns the number of chunks still waiting for a finer mesh. Without `timeMs` up to `budget` meshes are built
+   * at once (loading); with it, builds are time-sliced across frames (see buildSliced).
+   */
+  update(p, budget = 3, view = null, timeMs = Infinity) {
     const now = performance.now();
     this.prepared = this.prepared.filter(item => {
       if (now < item.until) return true;
@@ -250,24 +320,61 @@ export class TerrainLOD {
     if(view){view.camera.updateMatrixWorld(true);this.viewProjection.multiplyMatrices(view.camera.projectionMatrix,view.camera.matrixWorldInverse);this.frustum.setFromProjectionMatrix(this.viewProjection);
       this.focalLength=view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));}
     const todo = [];
-    for (const ch of this.chunks) {
+    // Time-sliced: the nearest chunks get their LOD errors measured first
+    let chunks = this.chunks;
+    if (timeMs !== Infinity) {
+      this.errorDeadline = performance.now() + timeMs;
+      if (!this.byDistance || Math.hypot(p.x - this.sortedAt.x, p.z - this.sortedAt.z) > 64) {
+        const dist = (ch) => (ch.bounds.center.x - p.x) ** 2 + (ch.bounds.center.z - p.z) ** 2;
+        this.byDistance = this.chunks.map((ch) => [dist(ch), ch]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+        this.sortedAt = { x: p.x, z: p.z };
+      }
+      chunks = this.byDistance;
+    }
+    for (const ch of chunks) {
       const lv = this.desiredLevel(ch, p, view);
       if (lv === ch.level) continue;
       if (ch.meshes[lv]) this.setLevel(ch, lv); else todo.push([lv, ch]);
     }
+    this.errorDeadline = Infinity;
     todo.sort((a, b) => a[0] - b[0]);
-    for (let k = 0; k < Math.min(budget, todo.length); k++) this.setLevel(todo[k][1], todo[k][0]);
+    if (timeMs === Infinity) for (let k = 0; k < Math.min(budget, todo.length); k++) this.setLevel(todo[k][1], todo[k][0]);
+    else this.buildSliced(todo, budget, timeMs);
     // free detailed meshes that are no longer needed
     for (const ch of this.chunks) for (let lv = 0; lv < 2; lv++) {
       const m = ch.meshes[lv];
       if (m && ch.level > lv + 1 && !this.prepared.some(item => item.ch === ch && item.lv === lv)) { this.scene.remove(m); m.geometry.dispose(); ch.meshes[lv] = null; }
     }
+    this.mergeGroups();
     return todo.length;
   }
 }
 
+/** Concatenate terrain chunk geometries (indexed or not) into one indexed geometry with the same vertices. */
+function mergeGeometries(parts) {
+  const names = ['position', 'normal', 'aGlacier', 'aRock'];
+  let vertices = 0, indices = 0;
+  for (const g of parts) { vertices += g.attributes.position.count; indices += g.index ? g.index.count : g.attributes.position.count; }
+  const out = new THREE.BufferGeometry(), index = vertices > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
+  for (const name of names) {
+    const size = parts[0].attributes[name].itemSize, data = new Float32Array(vertices * size);
+    let o = 0; for (const g of parts) { data.set(g.attributes[name].array, o); o += g.attributes[name].array.length; }
+    out.setAttribute(name, new THREE.BufferAttribute(data, size));
+  }
+  let base = 0, k = 0;
+  for (const g of parts) {
+    const n = g.attributes.position.count;
+    if (g.index) for (const v of g.index.array) index[k++] = v + base; else for (let v = 0; v < n; v++) index[k++] = v + base;
+    base += n;
+  }
+  out.setIndex(new THREE.BufferAttribute(index, 1));
+  out.computeBoundingSphere();
+  out.boundingSphere.radius += 300;   // the curvature lowers distant terrain in the shader (as for every chunk)
+  return out;
+}
+
 export function coreTerrainOptions() {
-  return { chunkCells: TERRAIN.chunkCells, levels: [1, 2, 4, 8, 16, 32, 64], distances: TERRAIN.lodDistances, glacier: true, shadows: true };
+  return { chunkCells: TERRAIN.chunkCells, levels: [1, 2, 4, 8, 16, 32, 64], distances: TERRAIN.lodDistances, glacier: true, shadows: true, mergeFrom: 4 };
 }
 export function backdropTerrainOptions(core) {
   return { chunkCells: TERRAIN.backdropChunkCells, levels: [1, 2, 4], distances: [12000, 30000], clipInside: core, normalField: core };
