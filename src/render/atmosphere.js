@@ -148,13 +148,13 @@ export class MistLayers {
       density=Math.max(density,1-smoothstep(.45,1,d));}
     return density;
   }
-  update(dt,cam,w,day,wind,windDirDeg,fogColor,sunColor){
+  update(dt,cam,w,day,wind,windDirDeg,fogColor,sunColor,strength=1){
     this.group.visible=this.enabled;if(!this.enabled)return;
     const wd=windDirDeg*D2R,v=wind/3.6*.2*dt;
     this.drift.x+=Math.sin(wd)*v;this.drift.y-=Math.cos(wd)*v;
     this.group.position.set(this.drift.x,0,this.drift.y);
     for(const m of this.layers){const u=m.material.uniforms;u.uCam.value.copy(cam);u.uOffset.value.copy(this.drift).multiplyScalar(-1);
-      u.uOpacity.value=VISUALS.mist.opacity*lerp(.5,1.5,smoothstep(.1,.7,w.S));
+      u.uOpacity.value=VISUALS.mist.opacity*lerp(.5,1.5,smoothstep(.1,.7,w.S))*strength;
       u.uColor.value.copy(fogColor).lerp(sunColor,.22*day).multiplyScalar(lerp(.18,1.08,day));
     }
   }

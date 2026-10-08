@@ -66,6 +66,21 @@ South Summit, the Hillary Step, Nuptse's north face, high camp and north rib, or
 Press **T** at any time to reopen the panel. It
 also sets the time of day (sunrise, noon, sunset, night) and can force clear skies.
 
+The same panel offers a **scenic flyby**: a cinematic camera flight along the South Col route, from Base Camp over the
+Khumbu Icefall and the Western Cwm, up the Lhotse Face and along the Southeast Ridge to the summit of Everest,
+pausing at every camp, landmark and viewpoint, with letterboxed captions. Choose **Full route** (15 stops) or
+**Highlights** (7 stops). Camps have oblique arcs, the Icefall and ridge have lateral glides, the Lhotse Face has
+upward reveals, and the summit has a slow pullback. Travel follows a terrain-cleared camera path with gradual
+acceleration and braking; skips and large relocations happen under a brief fade.
+Warm morning light advances slowly, with wind and exposure following the viewer. The summit panorama stays open
+with **Replay tour** and **Return to exploring** controls. **Shift** or **Space** skips a stop; **Esc** or a movement
+key returns through a fade, restoring the original time, weather and camera lens. The climber and save stay put.
+Upcoming terrain meshes and camp detail are prepared incrementally with a bounded cache and frame-time guard.
+Terrain error checks and geometry generation yield between batches, with a 1.5 ms scheduling target and at most
+eight spare meshes per terrain layer. Preparation pauses when the preceding frame is busy; the debug flyby state
+reports completed builds, job count, total preparation time and the longest preparation job.
+Run `npm run test:flyby` for the full-route/highlights motion, replay, clearance and restoration regressions.
+
 Survival systems are off in free viewing: no hypoxia, cold, natural slips or crevasse deaths. Manual physics experiments
 still move the body, with injuries and suffocation disabled. Nothing is saved, so the expedition
 you came from stays in your save. Continue it from the title screen. Summits visited in free viewing do not count.
@@ -258,6 +273,11 @@ work that never reaches the screen, with pixel-identical output:
   and lighting work (35–65% of terrain fragments);
 - the sky is drawn after the terrain, so the depth test skips its scattering shader wherever terrain covers it;
 - stars, snowflakes, spindrift streaks and mist that are fully transparent are not drawn.
+- distant terrain chunks (a few dozen triangles each, beyond ~3.6 km) are drawn merged in 2 km groups: one draw call
+  instead of up to 16, which roughly halves the frame's draw calls;
+- terrain meshes are built in time slices of a few milliseconds per frame, and a chunk keeps its current mesh until the
+  finer one is complete, so the crevasse-cut chunks around the Icefall (up to ~150 ms each) no longer stall a frame.
+  Level-of-detail errors are measured within the same per-frame budget, so a teleport does not freeze the game.
 
 See [the issue 13 implementation and comparison notes](docs/visual-fidelity.md) for shader corrections,
 asset attribution, shared geometry, validation and remaining hardware/volumetric-cloud work.

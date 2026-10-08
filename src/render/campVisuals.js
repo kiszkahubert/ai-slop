@@ -136,11 +136,13 @@ export class CampVisuals {
   }
   update(camera, force = false) {
     if (this.disposed || !this.finished) return;
-    if (!force && !this.dirty && camera.position.distanceToSquared(this.lastCamera) < 4) return;
+    const now = performance.now(), expiredWarm = this.records.some(r => r.warmUntil && r.warmUntil <= now);
+    if (!force && !this.dirty && !expiredWarm && camera.position.distanceToSquared(this.lastCamera) < 4) return;
     this.lastCamera.copy(camera.position); const changed = new Set(), cells = new Set();
     for (const r of this.records) {
+      if (r.warmUntil <= now) r.warmUntil = 0;
       const distance = Math.hypot(r.x - camera.position.x, r.y - camera.position.y, r.z - camera.position.z);
-      const level = campDetailLevel(distance, r.level, this.radius);
+      const level = Math.max(campDetailLevel(distance, r.level, this.radius), r.warmUntil > now ? 1 : 0);
       if (force || this.dirty || r.level !== level) { r.level = level; changed.add(r.bucket); cells.add(r.cell); }
     }
     for (const cell of cells) {
@@ -148,6 +150,19 @@ export class CampVisuals {
       this.buildGuys(cell);
     }
     this.dirty = false;
+  }
+  /** Prepare one upcoming camp bucket; its instances remain in their real world positions. */
+  prepare(camera) {
+    if (this.disposed || !this.finished) return 0;
+    const now = performance.now();
+    const record = this.records.find(r => !r.level && Math.hypot(r.x - camera.position.x, r.y - camera.position.y, r.z - camera.position.z) < this.radius);
+    if (!record) return 0;
+    for (const r of record.bucket.records) {
+      if (Math.hypot(r.x - camera.position.x, r.y - camera.position.y, r.z - camera.position.z) < this.radius) { r.warmUntil = now + 8000; r.level = 1; }
+    }
+    const [kind] = [...record.cell.models].find(([, bucket]) => bucket === record.bucket);
+    this.buildBucket(kind, record.bucket); this.buildGuys(record.cell);
+    return 1;
   }
   applyQuality(q) {
     if (this.disposed) return;

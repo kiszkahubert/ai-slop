@@ -38,6 +38,18 @@ test('detail hysteresis prevents repeated switches around the threshold', () => 
   assert.equal(campDetailLevel(89, 1, 80), 0);
 });
 
+test('upcoming camp detail warms without moving objects and expires at a stationary camera', () => {
+  const visual = new CampVisuals(new THREE.Scene(), { height: () => 5000 }, { quality: QUALITY_PRESETS.low });
+  const tent = visual.add('sleep', { x: 20, z: 10, id: 'future-tent' }); visual.finish();
+  const placement = [...tent.matrix.elements], current = new THREE.PerspectiveCamera(), future = current.clone();
+  current.position.set(500, 5005, 500); future.position.set(20, 5005, 10);
+  visual.update(current); assert.equal(tent.level, 0);
+  assert.equal(visual.prepare(future), 1); visual.update(current);
+  assert.equal(tent.level, 1); assert.deepEqual(tent.matrix.elements, placement);
+  tent.warmUntil = performance.now() - 1; visual.update(current);
+  assert.equal(tent.level, 0); visual.dispose();
+});
+
 test('camp texture bytes are deterministic and color/data maps use the right color spaces', () => {
   const a = createCampSurface('fabric', 32), b = createCampSurface('fabric', 32);
   assert.deepEqual(a.map.image.data, b.map.image.data);
