@@ -30,7 +30,7 @@ export function measureLodError(field, chunk, step) {
 function drain(job) { let result; do {result=job.next();} while(!result.done); return result.value; }
 function* lodErrorJob(field, chunk, step) {
   if(step===1)return 0;
-  let error=0;
+  let error=0, samples=0;
   const [xs,zs]=meshAxes(field,chunk,step);
   // One coarse cell at a time (its corners read once). A native vertex on a shared coarse edge belongs to the
   // cell after it, except on the chunk's last row / column.
@@ -45,10 +45,11 @@ function* lodErrorJob(field, chunk, step) {
           const u=(i-a)/(ix-a);
           const coarse=u+v<=1?h00+(h10-h00)*u+(h01-h00)*v:h11+(h01-h11)*(1-u)+(h10-h11)*(1-v);
           error=Math.max(error,Math.abs(field.heightAt(i,j)-coarse));
+          // A coarse row can cover thousands of native vertices; keep every resumable batch small.
+          if(++samples%64===0)yield;
         }
       }
     }
-    yield;
   }
   return error;
 }
@@ -64,7 +65,6 @@ export class TerrainLOD {
     this.prepared = []; // bounded hidden meshes for a predicted flyby camera
     this.preparing = null;
     this.building = null; // the time-sliced mesh build in hand (see buildSliced)
-    this.errorDeadline = Infinity; // LOD error measurements stop for this frame after it (time-sliced updates)
     this.frustum = new THREE.Frustum(); this.viewProjection = new THREE.Matrix4();
     const C = opts.chunkCells, ncx = Math.ceil((field.nx - 1) / C), ncz = Math.ceil((field.nz - 1) / C);
     for (let cj = 0; cj < ncz; cj++) for (let ci = 0; ci < ncx; ci++) {
@@ -75,7 +75,7 @@ export class TerrainLOD {
       let mn = 1e9, mx = -1e9;
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const h = field.heightAt(i, j); mn = Math.min(mn, h); mx = Math.max(mx, h); }
       this.chunks.push({
-        i0, j0, i1, j1, mn, mx, join, meshes: [], errors: [], level: -1,
+        i0, j0, i1, j1, mn, mx, join, meshes: [], errors: [], errorJobs: [], level: -1,
         x0: field.x0 + i0 * field.cell, x1: field.x0 + i1 * field.cell, z0: field.z0 + j0 * field.cell, z1: field.z0 + j1 * field.cell,
       });
     }
@@ -191,6 +191,23 @@ export class TerrainLOD {
     this.scene.add(m);ch.meshes[lv]=m;
   }
 
+  /** Resume a cached error measurement, or finish it eagerly during loading. */
+  lodError(ch, lv, deadline = Infinity) {
+    if (ch.errors[lv] !== undefined) return ch.errors[lv];
+    if (performance.now() >= deadline) return undefined;
+    const iterator = ch.errorJobs[lv] ??= lodErrorJob(this.f, ch, this.o.levels[lv]);
+    // The flyby predictor and the current view share the same partial measurement.
+    if (this.preparing?.kind === 'error' && this.preparing.iterator === iterator) this.preparing = null;
+    let result;
+    if (deadline === Infinity) result = { done: true, value: drain(iterator) };
+    else {
+      do { result = iterator.next(); } while (!result.done && performance.now() < deadline);
+      if (!result.done) return undefined;
+    }
+    ch.errorJobs[lv] = null;
+    return ch.errors[lv] = result.value;
+  }
+
   setLevel(ch, lv) {
     this.ensureLevel(ch, lv);
     this.prepared = this.prepared.filter(p => p.ch !== ch || p.lv !== lv);
@@ -230,7 +247,7 @@ export class TerrainLOD {
         const job=this.preparing,result=job.iterator.next();
         if(result.done) {
           this.preparing=null;
-          if(job.kind==='error')job.ch.errors[job.lv]=result.value;
+          if(job.kind==='error'){job.ch.errors[job.lv]=result.value;job.ch.errorJobs[job.lv]=null;}
           else {
             this.installGeometry(job.ch,job.lv,result.value);
             if(job.ch.level!==job.lv)this.prepared.push({ch:job.ch,lv:job.lv,until:performance.now()+8000});
@@ -244,7 +261,7 @@ export class TerrainLOD {
       const distance=Math.hypot(Math.max(ch.x0-p.x,0,p.x-ch.x1),Math.max(ch.z0-p.z,0,p.z-ch.z1),Math.max(ch.mn-p.y,0,p.y-ch.mx)*.6);
       let lv=this.desiredLevel(ch,camera.position,{distanceScale:view.distanceScale});
       while(lv>0) {
-        if(ch.errors[lv]===undefined){this.preparing={kind:'error',ch,lv,iterator:lodErrorJob(this.f,ch,this.o.levels[lv])};cursor--;break;}
+        if(ch.errors[lv]===undefined){this.preparing={kind:'error',ch,lv,iterator:ch.errorJobs[lv]??=lodErrorJob(this.f,ch,this.o.levels[lv])};cursor--;break;}
         if(ch.errors[lv]*this.focalLength/Math.max(4,distance)>view.pixelError)lv--;else break;
       }
       if(this.preparing)continue;
@@ -254,13 +271,17 @@ export class TerrainLOD {
     while (this.prepared.length > maxCached) this.releasePrepared(this.prepared.shift());
     return { built, ms: performance.now() - start, cached: this.prepared.length };
   }
-  cancelPrepare() { this.preparing?.iterator.return(); this.preparing=null; }
+  cancelPrepare() {
+    // Error measurements remain useful to the current view after a flyby ends.
+    if (this.preparing?.kind === 'geometry') this.preparing.iterator.return();
+    this.preparing = null;
+  }
   releasePrepared({ ch, lv }) {
     if (ch.level === lv || !ch.meshes[lv]) return;
     this.scene.remove(ch.meshes[lv]); ch.meshes[lv].geometry.dispose(); ch.meshes[lv] = null;
   }
 
-  desiredLevel(ch, p, view = null) {
+  desiredLevel(ch, p, view = null, deadline = Infinity) {
     if (ch.join) return 0;
     const dx = Math.max(ch.x0 - p.x, 0, p.x - ch.x1), dz = Math.max(ch.z0 - p.z, 0, p.z - ch.z1);
     const dy = Math.max(ch.mn - p.y, 0, p.y - ch.mx);
@@ -273,40 +294,40 @@ export class TerrainLOD {
         const focal=this.focalLength??view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));
         let deferred=false;
         const pixelError=level=>{
-          const job=this.preparing;
-          if(ch.errors[level]===undefined && job?.kind==='error' && job.ch===ch && job.lv===level){ch.errors[level]=drain(job.iterator);this.preparing=null;}
-          if(ch.errors[level]===undefined){
-            if(performance.now()>this.errorDeadline){deferred=true;return 0;}
-            ch.errors[level]=measureLodError(this.f,ch,this.o.levels[level]);
-          }
-          return ch.errors[level]*focal/Math.max(4,d);
+          const error = this.lodError(ch, level, deadline);
+          if(error===undefined){deferred=true;return 0;}
+          return error*focal/Math.max(4,d);
         };
         while(lv>0 && pixelError(lv)>view.pixelError)lv--;
         // Coarsening needs a margin in both distance and projected error.
         if(ch.level>=0 && lv>ch.level && (d<(D[ch.level]||Infinity)*distanceScale*1.1 || pixelError(lv)>view.pixelError*.75))lv=ch.level;
-        // Out of time this frame for measuring errors: decide next frame, keeping the current mesh meanwhile.
-        if(deferred && ch.level>=0)return ch.level;
+        // An unresolved target is distinct from the current level: it must not cancel an unfinished mesh.
+        if(deferred)return null;
       }
     }
     return lv;
   }
 
   /**
-   * Advance the mesh build in hand for at most `timeMs`, then start the next ones while time remains. The chunk
+   * Advance the mesh build in hand until the update's shared deadline, then start the next ones while time remains. The chunk
    * keeps its current mesh until the new one is complete, so an expensive mesh (a crevasse collar takes
    * 50-150 ms) is spread over several frames instead of stalling one. Returns whether a mesh was installed.
    */
-  buildSliced(todo, budget, timeMs) {
-    const deadline = performance.now() + timeMs, wanted = (job) => todo.some(([lv, ch]) => ch === job.ch && lv === job.lv);
+  buildSliced(todo, budget, deadline, deferred) {
+    const wanted = (job) => deferred.has(job.ch) || todo.some(([lv, ch]) => ch === job.ch && lv === job.lv);
     const advance = (job) => { let r; do r = job.iterator.next(); while (!r.done && performance.now() < deadline); return r; };
     if (this.building && !wanted(this.building)) { this.building.iterator.return(); this.building = null; }
+    if (this.building && deferred.has(this.building.ch)) return 0;
     let installed = 0;
     for (let k = 0; installed < budget && performance.now() < deadline; ) {
       if (!this.building) {
         while (k < todo.length && todo[k][1].meshes[todo[k][0]]) k++;
         if (k >= todo.length) break;
         const [lv, ch] = todo[k++];
-        this.building = { ch, lv, iterator: this.geometryJob(ch, this.o.levels[lv]) };
+        const prepared = this.preparing;
+        const iterator = prepared?.kind === 'geometry' && prepared.ch === ch && prepared.lv === lv ? prepared.iterator : this.geometryJob(ch, this.o.levels[lv]);
+        if (iterator === prepared?.iterator) this.preparing = null;
+        this.building = { ch, lv, iterator };
       }
       const job = this.building, r = advance(job);
       if (!r.done) break;
@@ -316,8 +337,8 @@ export class TerrainLOD {
   }
 
   /**
-   * Returns the number of chunks still waiting for a finer mesh. Without `timeMs` up to `budget` meshes are built
-   * at once (loading); with it, builds are time-sliced across frames (see buildSliced).
+   * Returns the number of chunks waiting for a LOD decision or mesh. Without `timeMs` up to `budget` meshes are built
+   * at once (loading); with it, error measurements and builds share one cooperative deadline across frames.
    */
   update(p, budget = 3, view = null, timeMs = Infinity) {
     // Settled terrain needs no scan of every chunk / cached mesh until the view actually changes.
@@ -325,18 +346,17 @@ export class TerrainLOD {
       view.camera.aspect, view.camera.near, view.camera.far, view.height, view.pixelError, view.distanceScale || 1] : null;
     if (state && this.settledView && !this.building && !this.preparing && !this.prepared.length &&
       state.every((v, i) => v === this.settledView[i])) return 0;
-    const now = performance.now();
+    const now = performance.now(), deadline = now + timeMs;
     this.prepared = this.prepared.filter(item => {
       if (now < item.until) return true;
       this.releasePrepared(item); return false;
     });
     if(view){view.camera.updateMatrixWorld(true);this.viewProjection.multiplyMatrices(view.camera.projectionMatrix,view.camera.matrixWorldInverse);this.frustum.setFromProjectionMatrix(this.viewProjection);
       this.focalLength=view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));}
-    const todo = [];
+    const todo = [], deferred = new Set();
     // Time-sliced: the nearest chunks get their LOD errors measured first
     let chunks = this.chunks;
     if (timeMs !== Infinity) {
-      this.errorDeadline = performance.now() + timeMs;
       if (!this.byDistance || Math.hypot(p.x - this.sortedAt.x, p.z - this.sortedAt.z) > 64) {
         const dist = (ch) => (ch.bounds.center.x - p.x) ** 2 + (ch.bounds.center.z - p.z) ** 2;
         this.byDistance = this.chunks.map((ch) => [dist(ch), ch]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
@@ -345,22 +365,22 @@ export class TerrainLOD {
       chunks = this.byDistance;
     }
     for (const ch of chunks) {
-      const lv = this.desiredLevel(ch, p, view);
+      const lv = this.desiredLevel(ch, p, view, deadline);
+      if (lv === null) { deferred.add(ch); continue; }
       if (lv === ch.level) continue;
       if (ch.meshes[lv]) this.setLevel(ch, lv); else todo.push([lv, ch]);
     }
-    this.errorDeadline = Infinity;
     todo.sort((a, b) => a[0] - b[0]);
     if (timeMs === Infinity) for (let k = 0; k < Math.min(budget, todo.length); k++) this.setLevel(todo[k][1], todo[k][0]);
-    else this.buildSliced(todo, budget, timeMs);
+    else this.buildSliced(todo, budget, deadline, deferred);
     // free detailed meshes that are no longer needed
     for (const ch of this.chunks) for (let lv = 0; lv < 2; lv++) {
       const m = ch.meshes[lv];
       if (m && ch.level > lv + 1 && !this.prepared.some(item => item.ch === ch && item.lv === lv)) { this.scene.remove(m); m.geometry.dispose(); ch.meshes[lv] = null; }
     }
     this.mergeGroups();
-    this.settledView = todo.length ? null : state;
-    return todo.length;
+    this.settledView = (todo.length || deferred.size) ? null : state;
+    return todo.length + deferred.size;
   }
 }
 
