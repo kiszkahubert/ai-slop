@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { QUALITY_PRESETS, renderPixelRatio } from '../../src/render/quality.js';
+import { QUALITY_PRESETS, renderPixelRatio, qualitySettings, initialVeryLowFullResolution, veryLowFullResolution, rememberVeryLowFullResolution } from '../../src/render/quality.js';
 import { LowResolution } from '../../src/render/lowResolution.js';
 import { LowGraphics, createSimpleTerrainMaterial } from '../../src/render/lowGraphics.js';
 import { campDetailRadius } from '../../src/render/campVisuals.js';
@@ -31,6 +31,42 @@ test('adaptive resolution reduces sustained slow frames, ignores suspension and 
   assert.equal(r.scale,1);
   r.reset(); for (const ms of [NaN,Infinity,0,-5,5000]) assert.equal(r.sample(ms),false);
   assert.equal(r.scale,1); assert.equal(r.samples,0);
+});
+
+test('full resolution uses native display pixels and preserves Very Low optimizations', () => {
+  const q = qualitySettings('verylow', true);
+  for (const [w,h,dpr] of [[1920,1080,1], [3840,2160,2], [720,1280,3]]) {
+    assert.equal(renderPixelRatio(q,w,h,dpr),dpr);
+  }
+  assert.equal(q.adaptiveResolution,false);
+  for (const key of Object.keys(QUALITY_PRESETS.verylow)) {
+    if (!['pixelRatio','maxWidth','maxHeight','adaptiveResolution'].includes(key)) {
+      assert.equal(q[key],QUALITY_PRESETS.verylow[key],key);
+    }
+  }
+  assert.equal(qualitySettings('verylow',false),QUALITY_PRESETS.verylow);
+  for (const name of ['low','medium','high']) assert.equal(qualitySettings(name,true),QUALITY_PRESETS[name]);
+});
+
+test('full-resolution preference persists and works when browser storage is blocked', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  const values = new Map();
+  try {
+    Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)}});
+    assert.equal(initialVeryLowFullResolution(),false);
+    rememberVeryLowFullResolution(true);
+    assert.equal(initialVeryLowFullResolution(),true);
+    assert.equal(veryLowFullResolution(),true);
+    assert.equal(qualitySettings('verylow').adaptiveResolution,false);
+    Object.defineProperty(globalThis,'localStorage',{configurable:true,get:()=>{throw Error('Blocked');}});
+    assert.equal(initialVeryLowFullResolution(),false);
+    rememberVeryLowFullResolution(false);
+    assert.equal(veryLowFullResolution(),false);
+  } finally {
+    rememberVeryLowFullResolution(false);
+    if (original) Object.defineProperty(globalThis,'localStorage',original);
+    else delete globalThis.localStorage;
+  }
 });
 
 test('simple scenery preserves instancing, cutouts and geometry and restores the exact source materials', () => {

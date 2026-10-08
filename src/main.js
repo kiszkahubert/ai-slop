@@ -11,7 +11,7 @@ import { buildProps } from './world/props.js';
 import { planBaseCamp } from './world/baseCamp.js';
 import { Environment } from './world/environment.js';
 import { createClimber } from './render/climber.js';
-import { QUALITY_PRESETS, initialQuality, rememberQuality, setCurrentQuality, renderPixelRatio } from './render/quality.js';
+import { qualitySettings, initialQuality, rememberQuality, setCurrentQuality, renderPixelRatio, veryLowFullResolution, rememberVeryLowFullResolution } from './render/quality.js';
 import { createSimpleTerrainMaterial, LowGraphics } from './render/lowGraphics.js';
 import { LowResolution } from './render/lowResolution.js';
 import { createTerrainLayerTextures, createMacroNoiseTexture } from './render/proceduralTextures.js';
@@ -22,7 +22,7 @@ import { setupPostProcessing } from './render/postfx.js';
 import { FRAME_CAPS, FramePacer, initialFrameCap, rememberFrameCap } from './render/framePacing.js';
 import { RayTracingLighting } from './render/rayTracing/lighting.js';
 import { SHARED, patchSceneMaterials } from './render/shared.js';
-import { on } from './core/events.js';
+import { on, emit } from './core/events.js';
 import { smoothstep } from './core/math.js';
 import { CameraRig } from './render/camera.js';
 import { game, newGame, restHours, placePlayer, setSpeedMul, die, refreshConditions } from './sim/game.js';
@@ -47,7 +47,7 @@ const canvas = document.getElementById('gl');
 const loadMsg = document.getElementById('loadMsg');
 const step = (t) => new Promise((r) => { loadMsg.textContent = t; setTimeout(r, 20); });
 
-let qualityName = initialQuality(), quality = QUALITY_PRESETS[qualityName];
+let qualityName = initialQuality(), quality = qualitySettings(qualityName);
 setCurrentQuality(qualityName);
 installAtmosphericFog();
 // Context MSAA cannot be toggled live. Medium/High use their multisampled scene target;
@@ -254,7 +254,7 @@ function debugKey(code) {
 }
 // ---------------- graphics quality: applied live, nothing in the simulation changes
 function setQuality(name) {
-  const q = QUALITY_PRESETS[name];
+  const q = qualitySettings(name);
   if (!q || !terrainMat) return false;
   lowGraphics.apply(false); // restore shared source materials before changing their texture sets
   qualityName = name; quality = q; rememberQuality(name); setCurrentQuality(name);
@@ -281,12 +281,24 @@ function setQuality(name) {
   return true;
 }
 on('setQuality', setQuality);
+function setVeryLowFullResolution(value) {
+  rememberVeryLowFullResolution(value);
+  if (qualityName === 'verylow') {
+    quality = qualitySettings(qualityName);
+    resolution.reset();
+    if (postfx) postfx.configure(quality);
+    resize();
+  }
+  emit('veryLowFullResolutionChanged');
+}
+on('setVeryLowFullResolution', setVeryLowFullResolution);
 on('setRayTracing', value => rayTracing?.setEnabled(value));
 on('setRayTracingStrength', name => rayTracing?.setStrength(name));
 
 const api = {
   game, renderer, scene, camera, keys, simStep, teleport, restHours, startAutopilot, interact, nearestRope, toggleSkis, setSpeedMul, setQuality,
   get quality() { return qualityName; }, get frameCap() { return frameCap; }, setFrameCap, get postfx() { return postfx; }, get climber() { return climber; }, get env() { return env; },
+  get veryLowFullResolution() { return veryLowFullResolution(); }, setVeryLowFullResolution,
   get rayTracing() { return rayTracing; }, setRayTracing: value => rayTracing?.setEnabled(value),
   triggerAvalanche: (options) => game.physics.triggerAvalanche(options),
   forceFall: (options) => game.physics.startFall({ reason: 'test', ...options }),

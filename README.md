@@ -235,7 +235,10 @@ oxygen, route map, compass, camera and controls behave exactly the same at every
 untextured diffuse scenery and simple camp models. Sun/moon lighting, the nighttime headlamp, terrain/crevasse
 geometry, route markers and all gameplay remain available. The sky becomes a solid atmospheric colour.
 The 3D view starts at half the viewport resolution, capped at **960 × 540**, and can fall to half of that again
-when sustained frame times exceed 45 ms. The HUD and menus stay at the full display resolution. Choose **30**
+when sustained frame times exceed 45 ms. Enable **Use full display resolution** under Very Low to render at
+native display resolution, including high-DPI displays, with no cap or automatic downscaling. This choice applies
+immediately and is remembered separately; all other Very Low optimizations stay active. The HUD and menus stay at
+the full display resolution. Choose **30**
 under *Frame rate* to limit power use once performance is adequate. This cap does not make an overloaded GPU faster.
 
 | | Very Low | Low | Medium | High |
