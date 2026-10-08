@@ -18,6 +18,7 @@ export function setupLighting(scene, quality) {
   const L = {
     sun, hemi, moon, headlamp, extent: 55, size: 2048,
     applyQuality(q) {
+      sun.castShadow = q.shadows !== false;
       this.extent = q.shadowExtent;
       if (this.size !== q.shadowMapSize) {
         this.size = q.shadowMapSize;

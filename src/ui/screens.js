@@ -34,7 +34,7 @@ function show(id) {
   document.body.dataset.screen = id || '';        // CSS hides HUD warnings under modal screens
 }
 
-/** Low / Medium / High buttons on the title and pause screens. */
+/** Graphics buttons on the title and pause screens. */
 function renderQualityButtons() {
   for (const box of document.querySelectorAll('[data-quality-buttons]')) {
     box.innerHTML = Object.entries(QUALITY_PRESETS).map(([id, q]) => `<button data-quality="${id}" class="${id === currentQuality() ? 'active' : ''}">${q.label}</button>`).join('');

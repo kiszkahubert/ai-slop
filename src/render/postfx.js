@@ -124,6 +124,8 @@ export class PostFX {
   /** (Re)build the render targets for a quality preset. */
   configure(q) {
     this.q = q;
+    this.prepass.setEnabled(q.depthPrepass !== false);
+    this.prepass.setSize(this.w, this.h);
     for (const t of this.targets) t.dispose();
     this.targets = []; this.sceneRT = this.hdrA = this.hdrB = this.aoRT = this.aoBlurRT = null;
     if (this.bloom) { this.bloom.dispose(); this.bloom = null; }
@@ -186,7 +188,7 @@ export class PostFX {
 export function setupPostProcessing(renderer, scene, camera, quality) {
   const fx = new PostFX(renderer, scene, camera);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  fx.setSize(size.x, size.y);
   fx.configure(quality);
+  fx.setSize(size.x, size.y);
   return fx;
 }

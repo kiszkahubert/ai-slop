@@ -14,8 +14,14 @@ const frames=rt.frame;s.setQuality('low');await new Promise(r=>setTimeout(r,300)
 assert(rt.requested&&!rt.stats.active&&rt.frame===frames,'Low must suspend lighting while remembering the request');
 s.setQuality('high');await wait(()=>rt.frame>frames+2&&rt.historyValid);
 const snapshots=rt.stats.snapshots;s.setQuality('medium');await wait(()=>rt.historyValid);assert(rt.stats.snapshots===snapshots,'Quality/display LOD must not rebuild static geometry');
+// Very Low releases active traced-lighting resources, keeps the preference, and can resume afterward.
+s.setQuality('verylow');await new Promise(r=>setTimeout(r,100));
+assert(rt.requested&&!rt.stats.active&&!rt.worker&&!rt.ready&&!rt.snapshot&&rt.screenTargets.length===0&&rt.catalog.originals.size===0,'Very Low must release lighting resources');
+s.setQuality('medium');await wait(()=>rt.snapshot&&rt.historyValid);
+assert(rt.stats.active&&!rt.failed,'Lighting failed to resume after Very Low');
+const resumedSnapshots=rt.stats.snapshots;
 rt.catalog.scene.traverse(o=>{if(o.isInstancedMesh&&o.parent===s.game.world.campVisuals.root&&o.visible&&o.boundingSphere?.distanceToPoint(s.camera.position)<100)assert(rt.proxies.has(o),'Visible nearby camp instance missing from surface capture');});
-const position=s.camera.position.clone();s.teleport(s.game.P.x+350,s.game.P.z);await wait(()=>rt.stats.snapshots>snapshots&&rt.historyValid);
+const position=s.camera.position.clone();s.teleport(s.game.P.x+350,s.game.P.z);await wait(()=>rt.stats.snapshots>resumedSnapshots&&rt.historyValid);
 s.camera.position.copy(position);s.setRayTracing(false);assert(!rt.stats.active&&!rt.failed,'Switch off should restore normal lighting');
 assert(localStorage.getItem('everestSim.rayTracing')==='off','Preference must persist');
 assert(JSON.stringify({seed:s.game.S.seed,physics:s.game.physics.state,camps:s.game.world.campVisuals.records.map(r=>[r.x,r.y,r.z])})===state,'Rendering changed simulation data');

@@ -97,6 +97,13 @@ export class TerrainLOD {
     return this.f.heightAt(i, j);
   }
 
+  /** Switch only display materials; keep the terrain and crevasse geometry shared with physics. */
+  setMaterial(material) {
+    this.mat = material;
+    for (const ch of this.chunks) for (const mesh of ch.meshes) if (mesh) mesh.material = material;
+    for (const group of this.groups.values()) if (group.mesh) group.mesh.material = material;
+  }
+
   buildGeometry(ch, step) {
     return drain(this.geometryJob(ch,step));
   }
@@ -252,7 +259,7 @@ export class TerrainLOD {
       const ch=candidates[cursor++];if(!ch)break;
       const p=camera.position;
       const distance=Math.hypot(Math.max(ch.x0-p.x,0,p.x-ch.x1),Math.max(ch.z0-p.z,0,p.z-ch.z1),Math.max(ch.mn-p.y,0,p.y-ch.mx)*.6);
-      let lv=this.desiredLevel(ch,camera.position);
+      let lv=this.desiredLevel(ch,camera.position,{distanceScale:view.distanceScale});
       while(lv>0) {
         if(ch.errors[lv]===undefined){this.preparing={kind:'error',ch,lv,iterator:ch.errorJobs[lv]??=lodErrorJob(this.f,ch,this.o.levels[lv])};cursor--;break;}
         if(ch.errors[lv]*this.focalLength/Math.max(4,distance)>view.pixelError)lv--;else break;
@@ -279,9 +286,10 @@ export class TerrainLOD {
     const dx = Math.max(ch.x0 - p.x, 0, p.x - ch.x1), dz = Math.max(ch.z0 - p.z, 0, p.z - ch.z1);
     const dy = Math.max(ch.mn - p.y, 0, p.y - ch.mx);
     const d = Math.hypot(dx, dz, dy * 0.6), D = this.o.distances;
-    let lv = 0; while (lv < D.length && d > D[lv]) lv++;
+    const distanceScale = view?.distanceScale || 1;
+    let lv = 0; while (lv < D.length && d > D[lv] * distanceScale) lv++;
     lv=Math.min(lv, this.o.levels.length - 1);
-    if(view){
+    if(view?.camera){
       if(this.frustum.intersectsSphere(ch.bounds)){
         const focal=this.focalLength??view.height/(2*Math.tan(THREE.MathUtils.degToRad(view.camera.fov)/2));
         let deferred=false;
@@ -292,7 +300,7 @@ export class TerrainLOD {
         };
         while(lv>0 && pixelError(lv)>view.pixelError)lv--;
         // Coarsening needs a margin in both distance and projected error.
-        if(ch.level>=0 && lv>ch.level && (d<(D[ch.level]||Infinity)*1.1 || pixelError(lv)>view.pixelError*.75))lv=ch.level;
+        if(ch.level>=0 && lv>ch.level && (d<(D[ch.level]||Infinity)*distanceScale*1.1 || pixelError(lv)>view.pixelError*.75))lv=ch.level;
         // An unresolved target is distinct from the current level: it must not cancel an unfinished mesh.
         if(deferred)return null;
       }
@@ -333,6 +341,11 @@ export class TerrainLOD {
    * at once (loading); with it, error measurements and builds share one cooperative deadline across frames.
    */
   update(p, budget = 3, view = null, timeMs = Infinity) {
+    // Settled terrain needs no scan of every chunk / cached mesh until the view actually changes.
+    const state = view ? [p.x, p.y, p.z, ...view.camera.quaternion.toArray(), view.camera.fov,
+      view.camera.aspect, view.camera.near, view.camera.far, view.height, view.pixelError, view.distanceScale || 1] : null;
+    if (state && this.settledView && !this.building && !this.preparing && !this.prepared.length &&
+      state.every((v, i) => v === this.settledView[i])) return 0;
     const now = performance.now(), deadline = now + timeMs;
     this.prepared = this.prepared.filter(item => {
       if (now < item.until) return true;
@@ -366,6 +379,7 @@ export class TerrainLOD {
       if (m && ch.level > lv + 1 && !this.prepared.some(item => item.ch === ch && item.lv === lv)) { this.scene.remove(m); m.geometry.dispose(); ch.meshes[lv] = null; }
     }
     this.mergeGroups();
+    this.settledView = (todo.length || deferred.size) ? null : state;
     return todo.length + deferred.size;
   }
 }

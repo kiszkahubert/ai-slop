@@ -1,0 +1,174 @@
+{
+  "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "viewport": [
+    1280,
+    720
+  ],
+  "sampleCount": 20,
+  "results": [
+    {
+      "location": "ebc",
+      "quality": "medium",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.21384930894595858,
+      "medianFrameMs": 4611.299999999814,
+      "p95FrameMs": 5050.800000000745,
+      "medianRenderMs": 4610.299999999814,
+      "p95RenderMs": 5049.5,
+      "medianGpuMs": 4484.5141,
+      "gpuSamples": 20,
+      "drawCalls": 676,
+      "triangles": 5473221
+    },
+    {
+      "location": "ebc",
+      "quality": "low",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.5902316659288771,
+      "medianFrameMs": 1689.699999999255,
+      "p95FrameMs": 1801.5999999996275,
+      "medianRenderMs": 1671.9000000003725,
+      "p95RenderMs": 1800.2999999998137,
+      "medianGpuMs": 1566.805111,
+      "gpuSamples": 20,
+      "drawCalls": 631,
+      "triangles": 4901083
+    },
+    {
+      "location": "ebc",
+      "quality": "verylow",
+      "buffer": [
+        640,
+        360
+      ],
+      "samples": 20,
+      "renderedFps": 2.389200812328276,
+      "medianFrameMs": 411.09999999962747,
+      "p95FrameMs": 463.29999999981374,
+      "medianRenderMs": 410.3999999994412,
+      "p95RenderMs": 463.29999999981374,
+      "medianGpuMs": 308.794771,
+      "gpuSamples": 20,
+      "drawCalls": 367,
+      "triangles": 2145049
+    },
+    {
+      "location": "c3",
+      "quality": "medium",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.16292336655069287,
+      "medianFrameMs": 6059,
+      "p95FrameMs": 6554.5999999996275,
+      "medianRenderMs": 6045.5999999996275,
+      "p95RenderMs": 6551.5,
+      "medianGpuMs": 5931.955628,
+      "gpuSamples": 20,
+      "drawCalls": 987,
+      "triangles": 6104603
+    },
+    {
+      "location": "c3",
+      "quality": "low",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.5121245486902415,
+      "medianFrameMs": 1895.1000000005588,
+      "p95FrameMs": 2141.600000000559,
+      "medianRenderMs": 1920.3999999994412,
+      "p95RenderMs": 2140.600000000559,
+      "medianGpuMs": 1782.63099,
+      "gpuSamples": 20,
+      "drawCalls": 946,
+      "triangles": 5321024
+    },
+    {
+      "location": "c3",
+      "quality": "verylow",
+      "buffer": [
+        640,
+        360
+      ],
+      "samples": 20,
+      "renderedFps": 2.6383831987756605,
+      "medianFrameMs": 379.29999999981374,
+      "p95FrameMs": 442.40000000037253,
+      "medianRenderMs": 378,
+      "p95RenderMs": 441.6000000005588,
+      "medianGpuMs": 264.53741,
+      "gpuSamples": 20,
+      "drawCalls": 473,
+      "triangles": 2237327
+    },
+    {
+      "location": "everest",
+      "quality": "medium",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.23582208167226365,
+      "medianFrameMs": 4203.299999999814,
+      "p95FrameMs": 4576.5,
+      "medianRenderMs": 4201,
+      "p95RenderMs": 4575.0999999996275,
+      "medianGpuMs": 4075.497969,
+      "gpuSamples": 20,
+      "drawCalls": 768,
+      "triangles": 4211499
+    },
+    {
+      "location": "everest",
+      "quality": "low",
+      "buffer": [
+        1280,
+        720
+      ],
+      "samples": 20,
+      "renderedFps": 0.728783296286849,
+      "medianFrameMs": 1383.6000000005588,
+      "p95FrameMs": 1498.2999999998137,
+      "medianRenderMs": 1382.5,
+      "p95RenderMs": 1497.3999999994412,
+      "medianGpuMs": 1255.158416,
+      "gpuSamples": 20,
+      "drawCalls": 733,
+      "triangles": 3758856
+    },
+    {
+      "location": "everest",
+      "quality": "verylow",
+      "buffer": [
+        640,
+        360
+      ],
+      "samples": 20,
+      "renderedFps": 2.46660829027052,
+      "medianFrameMs": 377.79999999981374,
+      "p95FrameMs": 462.8999999994412,
+      "medianRenderMs": 376.79999999981374,
+      "p95RenderMs": 461.79999999981374,
+      "medianGpuMs": 246.467002,
+      "gpuSamples": 20,
+      "drawCalls": 360,
+      "triangles": 2047091
+    }
+  ],
+  "recordedDate": "2026-10-08",
+  "baseCommit": "e4584623f7419e8a385eecb017fb17fd4472b9c7"
+}

@@ -1,7 +1,15 @@
-// Graphics quality presets (Low / Medium / High). The choice is remembered per browser and can be forced with
-// ?quality=low|medium|high. Nothing here affects the simulation.
+// Graphics presets. The choice is remembered per browser; ?quality=verylow|low|medium|high overrides it.
+// Nothing here affects the simulation.
 
 export const QUALITY_PRESETS = {
+  verylow: {
+    label: 'Very Low', pixelRatio: 0.5, maxWidth: 960, maxHeight: 540, adaptiveResolution: true,
+    simpleTerrain: true, simpleScenery: true, simpleSky: true, shadows: false, depthPrepass: false,
+    msaa: 0, post: false, bloom: false, ssao: false, dof: false,
+    shadowMapSize: 128, shadowExtent: 40, textureSize: 128, reliefCell: 64, aoCell: 128, macroShadow: false,
+    microDetail: false, exactGradients: false, snowParticles: 0, mist: false, terrainError: 12,
+    campDetailRadius: 0, lodDistanceScale: 0.35,
+  },
   low: {
     label: 'Low', pixelRatio: 1, msaa: 0, post: false, bloom: false, ssao: false, dof: false,
     shadowMapSize: 1024, shadowExtent: 40, textureSize: 256, reliefCell: 32, aoCell: 64, macroShadow: false,
@@ -35,3 +43,9 @@ export function rememberQuality(q) {
 let current = 'medium';
 export const currentQuality = () => current;
 export function setCurrentQuality(q) { current = q; }
+
+/** Keep CSS/HUD resolution intact, but bound the 3D drawing buffer even on a 4K display. */
+export function renderPixelRatio(q, width, height, dpr = 1, scale = 1) {
+  return Math.min(dpr, q.pixelRatio, (q.maxWidth || Infinity) / Math.max(1, width),
+    (q.maxHeight || Infinity) / Math.max(1, height)) * scale;
+}

@@ -42,6 +42,8 @@ export class Environment {
   }
 
   applyQuality(q) {
+    this.sky.visible = !q.simpleSky;
+    this.simpleSky = !!q.simpleSky;
     this.lights.applyQuality(q);
     this.mist.enabled = q.mist;
     if (this.snow.N !== q.snowParticles) this.snow.build(q.snowParticles);
@@ -70,7 +72,7 @@ export class Environment {
     u.sunPosition.value.copy(this.sunVec); u.rayleigh.value = 0.45 + 1.2 * w.S; u.turbidity.value = 1.2 + 8 * w.S;
     this.sky.position.copy(camera.position); this.stars.position.copy(camera.position);
     this.stars.material.opacity = (1 - smoothstep(-0.2, -0.02, el)) * (1 - w.S) * 0.95;
-    this.stars.visible = this.stars.material.opacity > 0;           // fully transparent: skip the draw
+    this.stars.visible = !this.simpleSky && this.stars.material.opacity > 0;
     const cloud = 1 - 0.7 * w.S, P = ctx.player, eye = ctx.cinematic ? camera.position : P;
     this.sun.intensity = VISUALS.lighting.sun * smoothstep(-0.02, 0.15, el) * cloud;
     this.sun.color.setRGB(1, lerp(0.62, 0.97, smoothstep(0, 0.4, el)), lerp(0.42, 0.92, smoothstep(0, 0.4, el)));
@@ -118,6 +120,7 @@ export class Environment {
       }
       const d = l.position.distanceTo(camera.position);
       l.material.opacity = clamp(1.25 - d / (u.range || 4000), 0, 1) * (d < (u.near ?? (u.range ? 6 : 30)) ? 0 : 1) * (ctx.cinematic ? 0 : 1);
+      l.visible = l.material.opacity > 0;
     }
     return el;
   }
