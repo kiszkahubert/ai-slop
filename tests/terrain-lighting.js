@@ -41,7 +41,7 @@ return (async()=>{
   };
   const sample=(x,occluded)=>{
     const normals=geometry.attributes.normal;for(let i=0;i<normals.count;i++)normals.setXYZ(i,x,.6,0);normals.needsUpdate=true;
-    SHARED.uMacroRect.value.set(-10,-10,occluded?.05:0,.05);r.setRenderTarget(target);r.render(scene,camera);r.readRenderTargetPixels(target,0,0,4,4,pixels);
+    SHARED.uMacroRect.value.set(-1000,-1000,occluded?.0005:0,.0005);r.setRenderTarget(target);r.render(scene,camera);r.readRenderTargetPixels(target,0,0,4,4,pixels);
     return (pixels[20]+pixels[21]+pixels[22])/3;
   };
   try {
